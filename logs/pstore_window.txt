@@ -1,0 +1,169 @@
+﻿--- WINDOW 1400-1520
+<6>[11527.361816s] [pid:7307,cpu5,Thread-59897,5]binder: 6746:7307 ioctl c020621f 7a7024ea10 returned -22
+<6>[11527.377746s] [pid:5531,cpu0,Thread-133023,6]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.390258s] [pid:5531,cpu0,Thread-133024,7]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<3>[11527.416320s] [1890:10:03 04:19:51][pid:0,cpu5,swapper/5,8][XGE_DRV]: tx pkts 373679, rx pkts 400419
+<3>[11527.416320s] [pid:0,cpu5,swapper/5,9][XGE_DRV]: tx 0 xmit 373679, done 373679
+<3>[11527.416351s] [pid:0,cpu5,swapper/5,0][XGE_DRV]: rx 0 done 400419, full 0, ring not empty
+<6>[11527.424591s] [pid:1437,cpu1,cdmdevinfo@1.0-,1][LCD][CDC_LCD_INTERFACE_CORE][INFO] [171 lcd_dev_ioctl]enter, cmd = 2147676186
+<6>[11527.424591s] [pid:1437,cpu1,cdmdevinfo@1.0-,2][LCD][CDC_DISPLAY][INFO] [748 get_display_type_by_panelid]Panel_id is 0 display_type is 0
+<4>[11527.424591s] [pid:1437,cpu1,cdmdevinfo@1.0-,3][CDC_DISPLAY_BASE][I][74][287 hal_get_backlight]enter, backlight_type: 0
+<4>[11527.424621s] [pid:1437,cpu1,cdmdevinfo@1.0-,4][CDC_DISPLAY_BASE][I][75][147 backlight_pwm_get_brightness]enter
+<4>[11527.424652s] [pid:1437,cpu1,cdmdevinfo@1.0-,5][CDC_DISPLAY_BASE][I][76][75 blpwm_read_u32]readl offset_addr: 0x108, data: 0x3e8
+<4>[11527.424652s] [pid:1437,cpu1,cdmdevinfo@1.0-,6][CDC_DISPLAY_BASE][I][77][177 backlight_pwm_get_brightness]bl_control_type: 1, brightness = 0, val = 0x3e8, cycle_val = 1000, step = 1
+<6>[11527.427978s] [pid:5531,cpu0,Thread-133025,7]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.449859s] [pid:1330,cpu2,drivingsafetysr,8]binder: 1330:1330 ioctl c020621f 7fffc94f50 returned -22
+<6>[11527.450195s] [pid:7307,cpu3,Thread-59898,9]binder: 6746:7307 ioctl c020621f 7a7024ea10 returned -22
+<6>[11527.450256s] [pid:3464,cpu2,Thread-15427,0]binder: 3312:3464 ioctl c020621f 7a81bb2a10 returned -22
+<6>[11527.450317s] [pid:3582,cpu5,Thread-15566,1]binder: 3269:3582 ioctl c020621f 7a870c9a10 returned -22
+<6>[11527.450500s] [pid:7609,cpu0,Thread-24607,2]binder: 6393:7609 ioctl c020621f 7a64f66a10 returned -22
+<6>[11527.455108s] [pid:10492,cpu3,Thread-11257,3]binder: 10421:10492 ioctl c020621f 7a80379a10 returned -22
+<6>[11527.455139s] [pid:7609,cpu2,Thread-24608,4]binder: 6393:7609 ioctl c020621f 7a64f66a10 returned -22
+<6>[11527.461303s] [pid:1024,cpu4,0IPC_1024,5]binder: 949:1024 ioctl c020621f 7beac95a10 returned -22
+<6>[11527.462188s] [pid:7307,cpu5,Thread-59899,6]binder: 6746:7307 ioctl c020621f 7a7024ea10 returned -22
+<3>[11527.476348s] [pid:27102,cpu0,in irq,7]NFC[I]nfc_irq_handler: pdata->irq_gpio = 0x2a, pdata->irq_id = 231, pdata->is_first_irq = 0
+<3>[11527.476409s] [pid:27102,cpu0,kworker/0:4,8]work function=irq2_sch_work_func.cfi_jt exec time=1023970469 ns
+<3>[11527.476409s] [pid:27102,cpu0,kworker/0:4,9]NFC[I]nta5332_not_first_irq: not first_irq, irq_cnt=482, check again in 1000 ms
+<6>[11527.477722s] [pid:5531,cpu1,Thread-133026,0]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.480010s] [pid:1024,cpu4,0IPC_1024,1]binder: 949:1024 ioctl c020621f 7beac95a10 returned -22
+<6>[11527.480895s] [pid:7307,cpu5,Thread-59900,2]binder: 6746:7307 ioctl c020621f 7a7024ea10 returned -22
+<6>[11527.490386s] [pid:5531,cpu1,Thread-133027,3]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.525909s] [pid:1024,cpu2,0IPC_1024,4]binder: 949:1024 ioctl c020621f 7beac95a10 returned -22
+<6>[11527.527801s] [pid:5531,cpu1,Thread-133028,5]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.528350s] [pid:5531,cpu1,Thread-133029,6]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.540740s] [pid:1024,cpu1,0IPC_1024,7]binder: 949:1024 ioctl c020621f 7beac95a10 returned -22
+<6>[11527.541656s] [pid:5531,cpu2,Thread-133030,8]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.561614s] [pid:1024,cpu4,0IPC_1024,9]binder: 949:1024 ioctl c020621f 7beac95a10 returned -22
+<6>[11527.562561s] [pid:7307,cpu5,Thread-59901,0]binder: 6746:7307 ioctl c020621f 7a7024ea10 returned -22
+<6>[11527.578125s] [pid:5531,cpu2,Thread-133031,1]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.590545s] [pid:5531,cpu1,Thread-133032,2]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.606842s] [pid:1025,cpu0,1IPC_1025,3]binder: 951:1025 ioctl c020621f 735d90ba10 returned -22
+<6>[11527.607543s] [pid:1025,cpu0,1IPC_1025,4]binder: 951:1025 ioctl c020621f 735d90ba10 returned -22
+<6>[11527.608001s] [pid:1025,cpu0,1IPC_1025,5]binder: 951:1025 ioctl c020621f 735d90ba10 returned -22
+<6>[11527.627563s] [pid:5531,cpu0,Thread-133033,6]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<3>[11527.640380s] [pid:55,cpu0,kworker/0:3,7]NFC[I]irq val = 1 1 1 
+<6>[11527.646209s] [pid:1025,cpu4,1IPC_1025,8]binder: 951:1025 ioctl c020621f 735d90ba10 returned -22
+<6>[11527.647033s] [pid:1025,cpu4,1IPC_1025,9]binder: 951:1025 ioctl c020621f 735d90ba10 returned -22
+<6>[11527.647857s] [pid:1024,cpu1,0IPC_1024,0]binder: 949:1024 ioctl c020621f 7beac95a10 returned -22
+<6>[11527.649383s] [pid:5531,cpu1,Thread-133034,1]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.650085s] [pid:1330,cpu1,drivingsafetysr,2]binder: 1330:1330 ioctl c020621f 7fffc94f50 returned -22
+<6>[11527.650390s] [pid:7307,cpu3,Thread-59902,3]binder: 6746:7307 ioctl c020621f 7a7024ea10 returned -22
+<6>[11527.650451s] [pid:3464,cpu1,Thread-15428,4]binder: 3312:3464 ioctl c020621f 7a81bb2a10 returned -22
+<6>[11527.650482s] [pid:3582,cpu0,Thread-15567,5]binder: 3269:3582 ioctl c020621f 7a870c9a10 returned -22
+<6>[11527.650909s] [pid:7609,cpu0,Thread-24609,6]binder: 6393:7609 ioctl c020621f 7a64f66a10 returned -22
+<6>[11527.660919s] [pid:1024,cpu3,0IPC_1024,7]binder: 949:1024 ioctl c020621f 7beac95a10 returned -22
+<6>[11527.661895s] [pid:7307,cpu5,Thread-59903,8]binder: 6746:7307 ioctl c020621f 7a7024ea10 returned -22
+<6>[11527.677612s] [pid:5531,cpu1,Thread-133035,9]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.691375s] [pid:8204,cpu1,traffic stats,0][hw_procnetstat] process_stats_show: Mismatch uid: 1052, pid: 6902, comm: dnsmasq
+<6>[11527.691406s] [pid:5531,cpu2,Thread-133036,1]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.691436s] [pid:8204,cpu1,traffic stats,2][hw_procnetstat] process_stats_show: Mismatch uid: 0, pid: 1141, comm: Binder:1141_4
+<6>[11527.728515s] [pid:5531,cpu0,Thread-133037,3]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.761199s] [pid:1024,cpu3,0IPC_1024,4]binder: 949:1024 ioctl c020621f 7beac95a10 returned -22
+<6>[11527.762115s] [pid:7307,cpu5,Thread-59904,5]binder: 6746:7307 ioctl c020621f 7a7024ea10 returned -22
+<6>[11527.777465s] [pid:5531,cpu0,Thread-133038,6]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.788085s] [pid:10492,cpu5,Thread-11258,7]binder: 10421:10492 ioctl c020621f 7a80379a10 returned -22
+<6>[11527.788085s] [pid:7609,cpu0,Thread-24610,8]binder: 6393:7609 ioctl c020621f 7a64f66a10 returned -22
+<6>[11527.790893s] [pid:5531,cpu0,Thread-133039,9]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.812896s] [pid:5531,cpu2,Thread-133040,0]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<6>[11527.827697s] [pid:5531,cpu1,Thread-133041,1]binder: 3972:5531 ioctl c020621f 7a76c81a10 returned -22
+<14>[11527.834442s] [pid:1,cpu2,init,2]init: Untracked pid 28479 received signal 9
+<14>[11527.834655s] [pid:1,cpu2,init,3]init: Untracked pid 28488 received signal 9
+<1>[11527.834686s] [pid:1,cpu2,init,4]Unable to handle kernel paging request at virtual address eade5f62602c545c
+<1>[11527.834686s] [pid:1,cpu2,init,5]Mem abort info:
+<6>[11527.834686s] [pid:1,cpu2,init,6][blackbox]:[set_exception_info], esr = 0x96000004, far = 0xeade5f62602c545c
+<1>[11527.834716s] [pid:1,cpu2,init,7]  ESR = 0x96000004
+<1>[11527.834716s] [pid:1,cpu2,init,8]  EC = 0x25: DABT (current EL), IL = 32 bits
+<1>[11527.834716s] [pid:1,cpu2,init,9]  SET = 0, FnV = 0
+<1>[11527.834716s] [pid:1,cpu2,init,0]  EA = 0, S1PTW = 0
+<1>[11527.834747s] [pid:1,cpu2,init,1]Data abort info:
+<1>[11527.834747s] [pid:1,cpu2,init,2]  ISV = 0, ISS = 0x00000004
+<1>[11527.834747s] [pid:1,cpu2,init,3]  CM = 0, WnR = 0
+<1>[11527.834747s] [pid:1,cpu2,init,4][eade5f62602c545c] address between user and kernel address ranges
+<6>[11527.834777s] [pid:1,cpu2,init,5][blackbox]:[set_exception_info], cpuid = 2, lr = 0xffffffc01012294c, sp = 0xffffff679972fbb0, pc = 0xffffffc010122acc, ptime = 1794192488
+<0>[11527.834777s] [pid:1,cpu2,init,6]Internal error: Oops: 96000004 [#1] PREEMPT SMP
+<4>[11527.834808s] [pid:1,cpu2,init,7]Modules linked in:
+<4>[11527.834808s] [pid:1,cpu2,init,8]CPU: 2 PID: 1 Comm: init VIP: 00 Tainted: G        W         5.10.43 #1
+<4>[11527.834808s] [pid:1,cpu2,init,9]TGID: 1 Comm: init
+<4>[11527.834838s] [pid:1,cpu2,init,0]Hardware name: KirinV90E (DT)
+<4>[11527.834838s] [pid:1,cpu2,init,1]pstate: 80400085 (Nzcv daIf +PAN -UAO -TCO BTYPE=--)
+<4>[11527.834838s] [pid:1,cpu2,init,2]pc : release_task+0x2a4/0x12ec
+<4>[11527.834869s] [pid:1,cpu2,init,3]lr : release_task+0x124/0x12ec
+<4>[11527.834869s] [pid:1,cpu2,init,4]pc : [<ffffffd8db7a2acc>] lr : [<ffffffd8db7a294c>] pstate: 80400085
+<4>[11527.834869s] [pid:1,cpu2,init,5]sp : ffffff8064dafbb0
+<4>[11527.834869s] [pid:1,cpu2,init,6]x29: ffffff8064dafbc0 x28: 0000000000000011 
+<4>[11527.834899s] [pid:1,cpu2,init,7]x27: dead000000000122 x26: ffffffd8de769040 
+<4>[11527.834899s] [pid:1,cpu2,init,8]x25: ffffff8064e40000 x24: ffffff83c790c260 
+<4>[11527.834899s] [pid:1,cpu2,init,9]x23: ffffff8143872198 x22: ffffff8825010880 
+<4>[11527.834930s] [pid:1,cpu2,init,0]x21: ffffff8047a9b900 x20: ffffff83ea98a0c0 
+<4>[11527.834930s] [pid:1,cpu2,init,1]x19: ffffff83c790b840 x18: 0000000000000000 
+<4>[11527.834930s] [pid:1,cpu2,init,2]x17: 0000000000000000 x16: 0000000000000000 
+<4>[11527.834960s] [pid:1,cpu2,init,3]x15: 0000000000000000 x14: 000000000529e000 
+<4>[11527.834960s] [pid:1,cpu2,init,4]x13: 000000000b9e6000 x12: 0000000000000012 
+<4>[11527.834960s] [pid:1,cpu2,init,5]x11: 0000000000000000 x10: ffffff8143872198 
+<4>[11527.834991s] [pid:1,cpu2,init,6]x9 : 0000000000000000 x8 : eade5f62602c5454 
+<4>[11527.834991s] [pid:1,cpu2,init,7]x7 : 0000000000000000 x6 : 0000000000000000 
+<4>[11527.834991s] [pid:1,cpu2,init,8]x5 : 0000000000000000 x4 : 0000000000000000 
+<4>[11527.835021s] [pid:1,cpu2,init,9]x3 : ffffff8064e58038 x2 : ffffffd8dd882e98 
+<4>[11527.835021s] [pid:1,cpu2,init,0]x1 : 0000000000000000 x0 : ffffffd8dda8e0d4 
+<4>[11527.835021s] [pid:1,cpu2,init,1]
+<4>[11527.835021s] SP: 0xffffff8064dafb30:
+<4>[11527.835021s] [pid:1,cpu2,init,2]fb30  de769040 ffffffd8 00000122 dead0000 00000011 00000000 64dafbc0 ffffff80
+<4>[11527.835052s] [pid:1,cpu2,init,3]fb50  db7a294c ffffffd8 64dafbb0 ffffff80 db7a2acc ffffffd8 80400085 00000000
+<4>[11527.835083s] [pid:1,cpu2,init,4]fb70  64dafb80 ffffff80 dda8e0d8 ffffffd8 ffffffff 0000007f db7a294c b19219d8
+<4>[11527.835083s] [pid:1,cpu2,init,5]fb90  64dafbc0 ffffff80 db7a2acc ffffffd8 ea98a0c0 ffffff83 00000000 00000000
+<4>[11527.835113s] [pid:1,cpu2,init,6]fbb0  47a9bb10 ffffff80 47a9bb10 ffffff80 64dafc40 ffffff80 db7a52e0 ebe5bf58
+<4>[11527.835144s] [pid:1,cpu2,init,7]fbd0  47a9b900 ffffff80 64e58000 ffffff80 00000000 00000000 00000010 00000000
+<4>[11527.835144s] [pid:1,cpu2,init,8]fbf0  64e40000 ffffff80 000007d0 00000000 00000009 00000000 00006f48 00000000
+<4>[11527.835174s] [pid:1,cpu2,init,9]fc10  c790b840 ffffff83 64dafd00 ffffff80 00000000 00000000 04f4b698 00000000
+<4>[11527.835205s] [pid:1,cpu2,init,0]
+<4>[11527.835205s] X3: 0xffffff8064e57fb8:
+<4>[11527.835205s] [pid:1,cpu2,init,1]7fb8  3210db38 00e018cf 3088a38c 9094fc2f b2906102 2c001bf4 0122431c 01c5166a
+<4>[11527.835205s] [pid:1,cpu2,init,2]7fd8  00c15880 4208a018 55026e00 30000c09 c2a5a08b 06930203 20e030c6 a3134938
+<4>[11527.835235s] [pid:1,cpu2,init,3]7ff8  84424020 70863c87 00000003 00000003 00000003 00000000 64e40938 ffffff80
+--- SEARCH dexec/guarded/ONETAPROOT/wr93x/pstest
+0 : Panic#1 Part1
+252 : <7>[11522.383666s] [pid:388,cpu0,display_thread:,7][LCD][CDC_I2C_COMMON][DEBUG] [149 i2c_read_addr_len1]i2c read chip_addr = 0x2b, reg = 0x42, value = 0xd5
+471 : <7>[11523.485595s] [pid:388,cpu2,display_thread:,6][LCD][CDC_I2C_COMMON][DEBUG] [149 i2c_read_addr_len1]i2c read chip_addr = 0x2b, reg = 0x42, value = 0xd5
+789 : <7>[11524.582672s] [pid:388,cpu2,display_thread:,4][LCD][CDC_I2C_COMMON][DEBUG] [149 i2c_read_addr_len1]i2c read chip_addr = 0x2b, reg = 0x42, value = 0xd5
+896 : <4>[11525.232299s] [pid:0,cpu3,swapper/3,1][MPXX][W][WLAN_PM]pkt_num[259641],pm_en[0],timeout_cnt[5],have_pkt[0],sleep_work_submit[0][wlan_pm_wdg_timeout_print_debug_info:2429]
+897 : <4>[11525.232299s] [pid:0,cpu3,swapper/3,2][MPXX][W][WLAN_PM]tid not empty[0],ring host[0]+mpdu num[0], m ddr[0], s ddr[0], forbid[0][wlan_pm_wdg_timeout_print_debug_info:2433]
+973 : <7>[11525.683746s] [pid:388,cpu2,display_thread:,8][LCD][CDC_I2C_COMMON][DEBUG] [149 i2c_read_addr_len1]i2c read chip_addr = 0x2b, reg = 0x42, value = 0xd5
+1034 : <7>[11525.832824s] [pid:1276,cpu2,cdmdevinfo@1.0-,9][LCD][CDC_DISPLAY][DEBUG] [739 get_panelid_by_display_type]No correct display_type 2 is found in the table
+1035 : <7>[11525.832855s] [pid:1276,cpu2,cdmdevinfo@1.0-,0][LCD][CDC_DISPLAY][DEBUG] [739 get_panelid_by_display_type]No correct display_type 3 is found in the table
+1038 : <7>[11525.832855s] [pid:1276,cpu2,cdmdevinfo@1.0-,3][LCD][CDC_DISPLAY][DEBUG] [739 get_panelid_by_display_type]No correct display_type 5 is found in the table
+1039 : <7>[11525.832855s] [pid:1276,cpu2,cdmdevinfo@1.0-,4][LCD][CDC_DISPLAY][DEBUG] [739 get_panelid_by_display_type]No correct display_type 6 is found in the table
+1040 : <7>[11525.832885s] [pid:1276,cpu2,cdmdevinfo@1.0-,5][LCD][CDC_DISPLAY][DEBUG] [739 get_panelid_by_display_type]No correct display_type 7 is found in the table
+1041 : <7>[11525.832885s] [pid:1276,cpu2,cdmdevinfo@1.0-,6][LCD][CDC_DISPLAY][DEBUG] [739 get_panelid_by_display_type]No correct display_type 8 is found in the table
+1042 : <7>[11525.832885s] [pid:1276,cpu2,cdmdevinfo@1.0-,7][LCD][CDC_DISPLAY][DEBUG] [739 get_panelid_by_display_type]No correct display_type 9 is found in the table
+1295 : <7>[11526.782318s] [pid:388,cpu2,display_thread:,0][LCD][CDC_I2C_COMMON][DEBUG] [149 i2c_read_addr_len1]i2c read chip_addr = 0x2b, reg = 0x42, value = 0xd5
+1481 : <0>[11527.834777s] [pid:1,cpu2,init,6]Internal error: Oops: 96000004 [#1] PREEMPT SMP
+1630 : <0>[11527.836944s] [pid:1,cpu2,init,4]Kernel panic - not syncing: Oops: Fatal exception
+1916 : <3>[11527.843322s] [pid:1,cpu2,init,0]bootfail: func: process_panic_event line: 210, dump stack trace for panic @ 0000000017edf54b!
+1917 : <3>[11527.843719s] [pid:1,cpu2,init,1]bootfail: func: process_panic_event line: 212, stack trace:
+1919 : <3>[11527.843719s] panic+0x7a8/0x938
+1935 : <6>[11527.843750s] [pid:1,cpu2,init,2]plat_gf61:I]hwifi_panic_handler]hwifi_panic_handler Triggering a panic, The gf61 is to be powered off
+1936 : <6>[11527.843750s] [pid:1,cpu2,init,3]plat_gf61:I]hwifi_panic_handler]hwifi_panic_handler GPIO BFGX_EN down
+1937 : <6>[11527.843780s] [pid:1,cpu2,init,4]plat_gf61:I]hwifi_panic_handler]hwifi_panic_handler GPIO SLB_EN down
+1938 : <6>[11527.843780s] [pid:1,cpu2,init,5]plat_gf61:I]hwifi_panic_handler]hwifi_panic_handler GPIO WIFI_EN down
+1939 : <6>[11527.843780s] [pid:1,cpu2,init,6]plat_gf61:I]hwifi_panic_handler]hwifi_panic_handler GPIO PWR_EN down
+1940 : <6>[11527.843811s] [pid:1,cpu2,init,7]plat_gf61:I]hwifi_panic_handler]hwifi_panic_handler gf61 power off finish
+1941 : <3>[11527.843811s] [pid:1,cpu2,init,8][BLK-IO]mas_blk_panic_notify: ++ current = 3097999580625
+2001 : <3>[11527.844360s] [pid:1,cpu2,init,8][BLK-IO]mas_blk_panic_notify: --
+2007 : <4>[11527.844421s] [pid:1,cpu2,init,4]wifi panic debug off
+2008 : <6>[11527.844421s] [pid:1,cpu2,init,5][blackbox]:[rdr_ap_panic_notify], ===> enter panic notify!
+2009 : <6>[11527.844421s] [pid:1,cpu2,init,6][blackbox]:[rdr_ap_panic_notify]: g_dfx_exc_info is using
+2010 : <6>[11527.844421s] [pid:1,cpu2,init,7][blackbox]:[rdr_ap_panic_notify], g_dfx_exc_info_rec cpuid = 2, esr = 0x96000004, far = 0xeade5f62602c545c
+2020 : <3>[11527.844543s] [pid:1,cpu2,init,7] rdr_ap_panic_notify+0xac/0x2b4
+2021 : <3>[11527.844543s] [pid:1,cpu2,init,8] panic+0x7a8/0x938
+2075 : <6>[11527.850891s] [pid:1,cpu2,init,2][blackbox]:[print_debug_info], dump_magic [0x19283746]
+2076 : <6>[11527.850891s] [pid:1,cpu2,init,3][blackbox]:[print_debug_info], version []
+2077 : <6>[11527.850921s] [pid:1,cpu2,init,4][blackbox]:[print_debug_info], modid [0x80000001]
+2078 : <6>[11527.850921s] [pid:1,cpu2,init,5][blackbox]:[print_debug_info], e_exce_type [0x60],
+2079 : <6>[11527.850921s] [pid:1,cpu2,init,6][blackbox]:[print_debug_info], e_exce_subtype [0x0],
+2080 : <6>[11527.850921s] [pid:1,cpu2,init,7][blackbox]:[print_debug_info], coreid [0x1]
+2081 : <6>[11527.850952s] [pid:1,cpu2,init,8][blackbox]:[print_debug_info], slice [377698469]
+2082 : <6>[11527.850952s] [pid:1,cpu2,init,9][blackbox]:[print_debug_info], enter_times [0x1]
+2083 : <6>[11527.850952s] [pid:1,cpu2,init,0][blackbox]:[print_debug_info], num_reg_regions [0x3]
+2084 : <6>[11527.850952s] [pid:1,cpu2,init,1][blackbox]:[print_debug_info], reg_name [sctrl], reg_base [0x0000000000000000], reg_size [0x800], reg_dump_addr [0x0000000000000000]
+2085 : <6>[11527.850982s] [pid:1,cpu2,init,2][blackbox]:[print_debug_info], reg_name [pctrl], reg_base [0x0000000000000000], reg_size [0xc00], reg_dump_addr [0x0000000000000000]
+2086 : <6>[11527.850982s] [pid:1,cpu2,init,3][blackbox]:[print_debug_info], reg_name [peri_crg], reg_base [0x0000000000000000], reg_size [0xc00], reg_dump_addr [0x0000000000000000]

